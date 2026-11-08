@@ -3,11 +3,11 @@
 About 12 weeks at 8–10 h/week. Daily use starts after step 3.
 Reference sections are in `docs/reference/arena-winning-plan.md` (grep the heading, don't read the whole file).
 
-**Current step: 0**
+**Current step: 1**
 
 | # | Step | Weeks | Work | Done when | Reference | Status |
 |---|---|---|---|---|---|---|
-| 0 | Setup | 0.5 | Accounts: Supabase (projects `dev` + `prod`, EU), Cloudflare, Resend, Anthropic Console (spend cap $5/month). Mac: Node LTS, pnpm, Supabase CLI, Wrangler, Claude Code. Monorepo scaffold. | `supabase link` works for `dev`; a "hello" page is live on `*.pages.dev` and opens on the iPhone | §4 | ☐ |
+| 0 | Setup | 0.5 | Accounts: Supabase (projects `dev` + `prod`, EU), Cloudflare, Resend, Anthropic Console (spend cap $5/month). Mac: Node LTS, pnpm, Supabase CLI, Wrangler, Claude Code. Monorepo scaffold. | `supabase link` works for `dev`; a "hello" page is live on `*.pages.dev` and opens on the iPhone | §4 | ☑ |
 | 1 | Database | 1 | Schema, RLS, `is_member`, signup trigger, seed (chains, categories, ~200 ingredients, aliases, ~60 recipes). Functions: `to_base_qty`, `classify_duplicate`, `confirm_purchase`, `consume`, `log_mcp_call`. SQL tests as two fake users. | User B sees 0 rows of A's data; `confirm_purchase` rejects a €0.01 mismatch; consuming more than is left leaves 0; unit-conversion tests pass | §5, §9 step 1 | ☐ |
 | 2 | Claude connector spike | 1 | Supabase OAuth 2.1 server; consent page on Cloudflare Pages; `mcp` Edge Function with `get_overview` + `list_pantry`; add as custom connector in Claude | From the Claude iPhone app, "what's in my pantry?" returns seed data, still works next day; no-token request gets `401` + resource metadata. Fallback if stuck >1 day: Cloudflare `workers-oauth-provider` | §7.1, §9 step 2 | ☐ |
 | 3 | App skeleton | 1 | Email OTP login, tabs (Pantry, Add, List, Budget, Recipes), pantry with days-left chips, quick add, consume/discard, PWA manifest + service worker (app shell only), auto-deploy from `main` | Installed on iPhone home screen, opens full-screen; add 3 items + consume 1 → 3 lots and 4 movements in DB. **Daily use starts.** | §9 step 3 (minus offline queue) | ☐ |

@@ -11,7 +11,7 @@ AI supermarket app that helps you organize expenses and items bought: a personal
 
 ## Status
 
-Planning done. Build not started. See [docs/PLAN.md](docs/PLAN.md) for the step list and current step.
+Step 0 (setup) done. Build in progress. See [docs/PLAN.md](docs/PLAN.md) for the step list and current step.
 
 ## Stack
 
