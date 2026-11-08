@@ -44,3 +44,6 @@ Household sharing (invite screen), native iPhone app on the same backend, Androi
 - Known risk: some Spanish ISPs block Cloudflare addresses during football matches (`pages.dev` timed out). Fix with a VPN for now; decide on hosting in step 3.
 - Demo pantry rows were inserted into the dev user's household by hand (8 lots). Delete them before real use.
 
+## Design (agreed 2026-11-09)
+
+See D8-D14 in DECISIONS.md. Screens to build in step 3: Home, Pantry, Add flow (camera → run list → Save), List, Budget. Use mockup board C as the visual reference.
