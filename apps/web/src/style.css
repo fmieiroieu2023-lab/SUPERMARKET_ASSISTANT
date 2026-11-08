@@ -1,0 +1,11 @@
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+body { margin: 0; display: grid; min-height: 100vh; place-items: center; }
+.card { width: min(92vw, 380px); padding: 24px; display: grid; gap: 12px; }
+h1 { font-size: 1.25rem; margin: 0; }
+input, button { font: inherit; padding: 12px; border-radius: 10px; border: 1px solid #8884; }
+button { background: #1a7f4b; color: #fff; border: 0; font-weight: 600; }
+button.ghost { background: transparent; color: inherit; border: 1px solid #8886; }
+button:disabled { opacity: 0.5; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.small { font-size: 0.85rem; opacity: 0.75; margin: 0; }
+.err { color: #c0392b; margin: 0; }
