@@ -3,12 +3,12 @@
 About 12 weeks at 8–10 h/week. Daily use starts after step 3.
 Reference sections are in `docs/reference/arena-winning-plan.md` (grep the heading, don't read the whole file).
 
-**Current step: 1**
+**Current step: 2**
 
 | # | Step | Weeks | Work | Done when | Reference | Status |
 |---|---|---|---|---|---|---|
 | 0 | Setup | 0.5 | Accounts: Supabase (projects `dev` + `prod`, EU), Cloudflare, Resend, Anthropic Console (spend cap $5/month). Mac: Node LTS, pnpm, Supabase CLI, Wrangler, Claude Code. Monorepo scaffold. | `supabase link` works for `dev`; a "hello" page is live on `*.pages.dev` and opens on the iPhone | §4 | ☑ |
-| 1 | Database | 1 | Schema, RLS, `is_member`, signup trigger, seed (chains, categories, ~200 ingredients, aliases, ~60 recipes). Functions: `to_base_qty`, `classify_duplicate`, `confirm_purchase`, `consume`, `log_mcp_call`. SQL tests as two fake users. | User B sees 0 rows of A's data; `confirm_purchase` rejects a €0.01 mismatch; consuming more than is left leaves 0; unit-conversion tests pass | §5, §9 step 1 | ☐ |
+| 1 | Database | 1 | Schema, RLS, `is_member`, signup trigger, seed (chains, categories, ~200 ingredients, aliases, ~60 recipes). Functions: `to_base_qty`, `classify_duplicate`, `confirm_purchase`, `consume`, `log_mcp_call`. SQL tests as two fake users. | User B sees 0 rows of A's data; `confirm_purchase` rejects a €0.01 mismatch; consuming more than is left leaves 0; unit-conversion tests pass | §5, §9 step 1 | ☑ |
 | 2 | Claude connector spike | 1 | Supabase OAuth 2.1 server; consent page on Cloudflare Pages; `mcp` Edge Function with `get_overview` + `list_pantry`; add as custom connector in Claude | From the Claude iPhone app, "what's in my pantry?" returns seed data, still works next day; no-token request gets `401` + resource metadata. Fallback if stuck >1 day: Cloudflare `workers-oauth-provider` | §7.1, §9 step 2 | ☐ |
 | 3 | App skeleton | 1 | Email OTP login, tabs (Pantry, Add, List, Budget, Recipes), pantry with days-left chips, quick add, consume/discard, PWA manifest + service worker (app shell only), auto-deploy from `main` | Installed on iPhone home screen, opens full-screen; add 3 items + consume 1 → 3 lots and 4 movements in DB. **Daily use starts.** | §9 step 3 (minus offline queue) | ☐ |
 | 4 | Receipt photos | 2 | Upload, `parse-receipt` (small → large model fallback, quota), sum check, review screen with ingredient chips, alias learning, check-dates sheet, duplicate guard, `retention` | ≥9/10 real receipts pass the sum check; re-logging same products ≥80% auto-matched; same ticket twice → "already logged" | §6.1, §9 step 5 | ☐ |
@@ -25,3 +25,13 @@ Track: weeks with a logged trip (target 4/4), share logged by receipt, auto-matc
 
 ## Later (not now)
 Household sharing (invite screen), native iPhone app on the same backend, Android, payments (Stripe for web), shared product catalog from the OFF data export, connector directory listing.
+
+## Step 1 notes (done on `dev` only; `prod` has no schema yet)
+
+- Tests: `supabase/tests/database/` (`supabase test db`). 61 checks passed against `dev`: isolation between two users, Claude kill switch, category and unit rules, `to_base_qty`, sum check and adjustment line, consume floor, the eight duplicate worked checks in both orders, merge cases, use_by product in a best-before category.
+- Not covered by a repeatable test: the concurrency check (two confirms of the same receipt). Run by hand on `dev`: exactly one confirmed trip. The tool may have run the two calls one after the other, so treat it as a weak check and re-run it with two terminals before relying on it.
+- Changes from the reference: `user_settings.push_subscription` (Web Push) replaces `expo_push_token`; `confirm_purchase` has an extra `p_keep_total_cents` argument (typed+typed merges); `refresh_shopping_list` is an empty stub until step 8; the ticket number is read from `parse_output->>'ticket_number'` and saved only at confirm; 63 recipes (reference said ~60).
+- Bugs found by the tests and fixed in the migrations: tables had no `authenticated` privileges (RLS alone isn't enough, and TRUNCATE bypassed it); a draft can't hold a ticket number, so confirm now sets it with the status; a household couldn't be deleted in one go because of a foreign-key check order.
+- Every new table from now on needs its own `grant` (default privileges are off). Put it in the same migration as the table.
+- `dev` migration history has different names from the files here (seed split in two, two small patches). Before the first `supabase db push` to `prod`, the files here are the truth. For `dev`, run `supabase migration repair` or reset it.
+

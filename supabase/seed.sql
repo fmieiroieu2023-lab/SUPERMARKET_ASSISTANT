@@ -1,0 +1,1 @@
+-- Seed data lives in migrations (reference data is global). Nothing to load here.
