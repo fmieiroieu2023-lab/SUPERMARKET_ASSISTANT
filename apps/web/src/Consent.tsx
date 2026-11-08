@@ -1,5 +1,5 @@
 // OAuth consent page: Claude sends you here to approve access to your pantry data.
-// Supabase adds ?authorization_id=... ; we sign you in (email code), show who is asking, then Allow or Deny.
+// Supabase adds ?authorization_id=... ; we sign you in (password for now; the app's email-code login comes in step 3), show who is asking, then Allow or Deny.
 import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
 
@@ -15,8 +15,7 @@ const authorizationId = new URLSearchParams(window.location.search).get("authori
 export function Consent() {
   const [state, setState] = useState<State>({ s: "loading" });
   const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
-  const [sent, setSent] = useState(false);
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
 
@@ -32,15 +31,9 @@ export function Consent() {
   }
   useEffect(() => { void load(); }, []);
 
-  async function sendCode() {
+  async function signIn() {
     setBusy(true); setNote("");
-    const { error } = await supabase.auth.signInWithOtp({ email });
-    setBusy(false);
-    if (error) setNote(error.message); else setSent(true);
-  }
-  async function verify() {
-    setBusy(true); setNote("");
-    const { error } = await supabase.auth.verifyOtp({ email, token: code.trim(), type: "email" });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     setBusy(false);
     if (error) setNote(error.message); else void load();
   }
@@ -61,14 +54,8 @@ export function Consent() {
         <>
           <p>Sign in to continue.</p>
           <input type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
-          {!sent ? (
-            <button disabled={busy || !email} onClick={sendCode}>Send me a code</button>
-          ) : (
-            <>
-              <input inputMode="numeric" placeholder="Code from the email" value={code} onChange={(e) => setCode(e.target.value)} autoComplete="one-time-code" />
-              <button disabled={busy || !code} onClick={verify}>Sign in</button>
-            </>
-          )}
+          <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+          <button disabled={busy || !email || !password} onClick={signIn}>Sign in</button>
           {note && <p className="err">{note}</p>}
         </>
       )}
