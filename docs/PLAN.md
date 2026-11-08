@@ -9,7 +9,7 @@ Reference sections are in `docs/reference/arena-winning-plan.md` (grep the headi
 |---|---|---|---|---|---|---|
 | 0 | Setup | 0.5 | Accounts: Supabase (projects `dev` + `prod`, EU), Cloudflare, Resend, Anthropic Console (spend cap $5/month). Mac: Node LTS, pnpm, Supabase CLI, Wrangler, Claude Code. Monorepo scaffold. | `supabase link` works for `dev`; a "hello" page is live on `*.pages.dev` and opens on the iPhone | §4 | ☑ |
 | 1 | Database | 1 | Schema, RLS, `is_member`, signup trigger, seed (chains, categories, ~200 ingredients, aliases, ~60 recipes). Functions: `to_base_qty`, `classify_duplicate`, `confirm_purchase`, `consume`, `log_mcp_call`. SQL tests as two fake users. | User B sees 0 rows of A's data; `confirm_purchase` rejects a €0.01 mismatch; consuming more than is left leaves 0; unit-conversion tests pass | §5, §9 step 1 | ☑ |
-| 2 | Claude connector spike | 1 | Supabase OAuth 2.1 server; consent page on Cloudflare Pages; `mcp` Edge Function with `get_overview` + `list_pantry`; add as custom connector in Claude | From the Claude iPhone app, "what's in my pantry?" returns seed data, still works next day; no-token request gets `401` + resource metadata. Fallback if stuck >1 day: Cloudflare `workers-oauth-provider` | §7.1, §9 step 2 | ☐ |
+| 2 | Claude connector spike | 1 | Supabase OAuth 2.1 server; consent page on Cloudflare Pages; `mcp` Edge Function with `get_overview` + `list_pantry`; add as custom connector in Claude | From the Claude iPhone app, "what's in my pantry?" returns seed data, still works next day; no-token request gets `401` + resource metadata. Fallback if stuck >1 day: Cloudflare `workers-oauth-provider` | §7.1, §9 step 2 | ◐ |
 | 3 | App skeleton | 1 | Email OTP login, tabs (Pantry, Add, List, Budget, Recipes), pantry with days-left chips, quick add, consume/discard, PWA manifest + service worker (app shell only), auto-deploy from `main` | Installed on iPhone home screen, opens full-screen; add 3 items + consume 1 → 3 lots and 4 movements in DB. **Daily use starts.** | §9 step 3 (minus offline queue) | ☐ |
 | 4 | Receipt photos | 2 | Upload, `parse-receipt` (small → large model fallback, quota), sum check, review screen with ingredient chips, alias learning, check-dates sheet, duplicate guard, `retention` | ≥9/10 real receipts pass the sum check; re-logging same products ≥80% auto-matched; same ticket twice → "already logged" | §6.1, §9 step 5 | ☐ |
 | 5 | Barcode | 0.5 | JS camera scanner, check digit, prefix 20–29 → manual, Open Food Facts lookup (≤12/min) + cache, unpacking session with "Finish trip" | 20 kitchen products: known = 1 tap, OFF hits fill in, misses saved; weighed-fruit label goes to "pick product" | §6.2, §6.3 | ☐ |
@@ -34,4 +34,13 @@ Household sharing (invite screen), native iPhone app on the same backend, Androi
 - Bugs found by the tests and fixed in the migrations: tables had no `authenticated` privileges (RLS alone isn't enough, and TRUNCATE bypassed it); a draft can't hold a ticket number, so confirm now sets it with the status; a household couldn't be deleted in one go because of a foreign-key check order.
 - Every new table from now on needs its own `grant` (default privileges are off). Put it in the same migration as the table.
 - `dev` migration history has different names from the files here (seed split in two, two small patches). Before the first `supabase db push` to `prod`, the files here are the truth. For `dev`, run `supabase migration repair` or reset it.
+
+## Step 2 notes (dev only)
+
+- Works end to end: Claude (via the connector) called `get_overview` and `list_pantry` on dev and got the seed pantry; both calls were written to `mcp_audit` with the OAuth client id. Unauthenticated requests get 401 (checked in a browser).
+- Still to confirm before marking ☑: it answers from the Claude iPhone app, and still works the next day (token refresh).
+- Consent page signs in with email + password for now (Supabase can't edit email templates without custom SMTP, so the email-code login waits for step 3 + Resend). The dev user was created by hand in the dashboard.
+- `get_overview` is a first version (pantry facts only). Money, staples and shopping list join it in steps 7-8.
+- Known risk: some Spanish ISPs block Cloudflare addresses during football matches (`pages.dev` timed out). Fix with a VPN for now; decide on hosting in step 3.
+- Demo pantry rows were inserted into the dev user's household by hand (8 lots). Delete them before real use.
 
