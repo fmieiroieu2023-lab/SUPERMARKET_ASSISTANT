@@ -47,3 +47,8 @@ Household sharing (invite screen), native iPhone app on the same backend, Androi
 ## Design (agreed 2026-11-09)
 
 See D8-D14 in DECISIONS.md. Screens to build in step 3: Home, Pantry, Add flow (camera → run list → Save), List, Budget. Use mockup board C as the visual reference.
+
+## Step 3 notes
+
+- Slice 1 (2026-11-09): app shell in the Classic look. Password sign-in, bottom bar (Home, Pantry, +, List, Budget), Home and Pantry read live data through `get_overview` and `list_pantry` (same functions as Claude). The + opens a placeholder; List and Budget are placeholders.
+- Still to do in step 3: email-code login (needs Resend), receipt camera + run list (+), quick add, consume/discard, PWA manifest + service worker, hosting decision (pages.dev is blocked on some Spanish ISPs during matches).
