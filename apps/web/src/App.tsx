@@ -4,6 +4,9 @@ import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { FAMILY_ICON, FAMILY_ORDER, familyOf, type Family } from "./families";
 import { IconSprite, Tile } from "./Icons";
+import { ReceiptFlow } from "./Receipt";
+import { Spending } from "./Spending";
+import { dayLabel, friendly } from "./shared";
 
 type Lot = {
   lot_id: string; name: string; category: string; location: string; qty_left: number; unit: string;
@@ -11,7 +14,7 @@ type Lot = {
   expiry_kind: string; expiry_source: string;
 };
 type Overview = { today: string; expired: number; expiring_3_days: number; to_check: number; unconfirmed: number; in_stock: number };
-type Tab = "home" | "pantry" | "list" | "budget";
+type Tab = "home" | "pantry" | "list" | "spending";
 
 // A lot needs attention when it is past its date, needs a check, or ends within 3 days (same window as get_overview).
 const needsAttention = (l: Lot) => l.state !== "ok" || (l.expiry_kind !== "none" && l.days_left !== null && l.days_left <= 3);
@@ -26,8 +29,7 @@ function daysLabel(l: Lot): { n: string; u: string } {
 }
 const unitLabel = (u: string, n: number) => (u === "unit" ? (n === 1 ? "item" : "items") : u);
 const qtyLabel = (l: Lot) => `${Number(l.qty_left)} ${unitLabel(l.unit, Number(l.qty_left))} · ${l.location}`;
-// Raw database errors mean nothing to a shopper; show a short human sentence instead.
-const friendly = (m: string) => (/fetch|network|load failed/i.test(m) ? "No connection. Check your internet and try again." : /jwt|auth/i.test(m) ? "Your session ended. Please sign in again." : "Something went wrong. Please try again.");
+
 
 export function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
@@ -73,6 +75,9 @@ function Shell() {
   const [err, setErr] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [selected, setSelected] = useState<Lot | null>(null);
+  const [receipt, setReceipt] = useState<{ files?: File[]; resumeId?: string } | null>(null);
+  const [openTrip, setOpenTrip] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<{ purchase_id: string; created_at: string }[]>([]);
 
   const load = useCallback(async () => {
     // One call (app_snapshot) instead of three: faster, and the numbers and the list always agree.
@@ -82,6 +87,9 @@ function Shell() {
     const snap = data as { overview: Overview; lots: Lot[] };
     setOverview(snap.overview);
     setLots(snap.lots);
+    // Unfinished receipts (Resume or discard). Quietly skipped if the receipts update isn't on the server yet.
+    const p = await supabase.rpc("list_purchases", { p_limit: 1 });
+    setDrafts(p.error ? [] : (p.data as { drafts: { purchase_id: string; created_at: string }[] }).drafts);
   }, []);
   useEffect(() => {
     void load();
@@ -100,19 +108,30 @@ function Shell() {
       <IconSprite />
       <main className="screen">
         {err && <p className="err pad">{err} <button className="link" onClick={() => void load()}>Retry</button></p>}
+        {tab === "home" && drafts[0] && (
+          <div className="pad" style={{ paddingBottom: 0 }}>
+            <button className="banner warn-b item-btn" onClick={() => setReceipt({ resumeId: drafts[0].purchase_id })}>
+              Unfinished receipt from {dayLabel(drafts[0].created_at.slice(0, 10))}. Tap to finish or discard.
+            </button>
+          </div>
+        )}
         {tab === "home" && <Home lots={lots} attention={attention} count={attentionCount} onAttention={() => go("pantry", true)} onPantry={() => go("pantry")} />}
         {tab === "pantry" && <Pantry lots={lots} onlyFlag={onlyFlag} setOnlyFlag={setOnlyFlag} total={overview?.in_stock ?? 0} onSelect={setSelected} />}
         {tab === "list" && <Soon title="Shopping list" note="Arrives with the shopping-list step." />}
-        {tab === "budget" && <Soon title="Budget" note="Arrives with the budget step." />}
+        {tab === "spending" && <Spending openTrip={openTrip} onOpenTrip={setOpenTrip} onResume={(id) => setReceipt({ resumeId: id })} />}
       </main>
-      {addOpen && <AddSheet onClose={() => setAddOpen(false)} onDone={() => { setAddOpen(false); void load(); }} />}
+      {addOpen && <AddSheet onClose={() => setAddOpen(false)} onDone={() => { setAddOpen(false); void load(); }}
+                            onReceipt={(files) => { setAddOpen(false); setReceipt({ files }); }} />}
+      {receipt && <ReceiptFlow files={receipt.files} resumeId={receipt.resumeId}
+                               onClose={() => { setReceipt(null); void load(); }}
+                               onSaved={(id) => { setReceipt(null); setTab("spending"); setOpenTrip(id); void load(); }} />}
       {selected && <LotSheet lot={selected} onClose={() => setSelected(null)} onDone={() => { setSelected(null); void load(); }} />}
       <nav className="bar" aria-label="Main">
         <TabBtn label="Home" on={tab === "home"} onClick={() => go("home")} d="M4 11 12 4l8 7v9h-5v-6H9v6H4z" />
         <TabBtn label="Pantry" on={tab === "pantry"} onClick={() => go("pantry")} d="M4 8h16v12H4zM3 4h18v4H3zM10 12h4" />
         <div className="plus-wrap"><button className="plus" aria-label="Add a shop" onClick={() => setAddOpen(true)}><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#E3C47A" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg></button></div>
         <TabBtn label="List" on={tab === "list"} onClick={() => go("list")} d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" />
-        <TabBtn label="Budget" on={tab === "budget"} onClick={() => go("budget")} d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
+        <TabBtn label="Spending" on={tab === "spending"} onClick={() => { go("spending"); setOpenTrip(null); }} d="M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3" />
       </nav>
     </div>
   );
@@ -215,7 +234,27 @@ function Pantry({ lots, onlyFlag, setOnlyFlag, total, onSelect }: { lots: Lot[] 
 
 type Cat = { id: string; name_es: string };
 
-function AddSheet({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+function AddSheet({ onClose, onDone, onReceipt }: { onClose: () => void; onDone: () => void; onReceipt: (files: File[]) => void }) {
+  const [manual, setManual] = useState(false);
+  const pick = (e: React.ChangeEvent<HTMLInputElement>) => { const f = [...(e.target.files ?? [])]; e.target.value = ""; if (f.length) onReceipt(f); };
+  if (!manual) return (
+    <div className="sheet-back" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <h2 className="serif">Add a shop</h2>
+        <label className="primary file-btn">Photograph the receipt
+          <input type="file" accept="image/*" capture="environment" onChange={pick} hidden /></label>
+        <label className="ghost file-btn">Choose photos or a PDF
+          <input type="file" accept="image/*,application/pdf" multiple onChange={pick} hidden /></label>
+        <p className="small">Long ticket? Choose up to 4 photos, top to bottom, slightly overlapping.</p>
+        <button className="ghost" onClick={() => setManual(true)}>Add one item by hand</button>
+        <button className="link" onClick={onClose}>Cancel</button>
+      </div>
+    </div>
+  );
+  return <ManualAdd onClose={onClose} onDone={onDone} />;
+}
+
+function ManualAdd({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const [cats, setCats] = useState<Cat[]>([]);
   const [name, setName] = useState("");
   const [cat, setCat] = useState("");

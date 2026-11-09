@@ -66,7 +66,7 @@ input { font: inherit; padding: 14px; border-radius: 14px; border: 1px solid var
 .primary { min-height: 56px; border-radius: 28px; border: 0; background: var(--green); color: #F5F1E6; font-weight: 700; font-size: 17px; box-shadow: 0 8px 18px rgba(35,64,50,.35); }
 .primary:disabled { opacity: .5; }
 .err { color: var(--red); margin: 0; } .small { font-size: 14px; color: var(--muted); margin: 0; } .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-button.ghost { min-height: 56px; border-radius: 28px; border: 2px solid var(--green); background: transparent; color: var(--green); font-weight: 700; }
+button.ghost, label.ghost { min-height: 56px; border-radius: 28px; border: 2px solid var(--green); background: transparent; color: var(--green); font-weight: 700; }
 
 .halo { border-radius: 19px; animation: halo 2.6s ease-out infinite; }
 .rise { animation: rise .6s ease-out both; }
@@ -87,3 +87,43 @@ select { font: inherit; padding: 14px; border-radius: 14px; border: 1px solid va
 .sheet { max-height: 92%; overflow-y: auto; }
 button.item { width: 100%; text-align: left; font: inherit; color: inherit; }
 button.ghost.danger { border-color: var(--red); color: #8A2D1C; }
+
+/* ── Step 4: receipt flow (full screen) ── */
+.flow { position: absolute; inset: 0; z-index: 6; background: var(--bg); display: flex; flex-direction: column; }
+.flow-h { display: flex; justify-content: space-between; align-items: center; padding: max(8px, env(safe-area-inset-top)) 12px 0; }
+.flow-body { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 24px; }
+.flow-foot { padding: 12px 20px max(16px, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--bg); display: grid; }
+.center-y { flex: 1; justify-content: center; align-items: center; text-align: center; }
+.big-status { font-size: 22px; margin: 0; }
+.spinner { width: 54px; height: 54px; border-radius: 50%; border: 5px solid var(--line); border-top-color: var(--green); animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+.run-h { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 18px; }
+.run-h select { min-height: 48px; padding: 8px 12px; font-weight: 700; }
+.total-in { display: flex; align-items: center; gap: 4px; font-weight: 700; }
+.total-in input { width: 110px; min-height: 48px; padding: 8px 10px; font-weight: 700; font-size: 18px; }
+.banner { border-radius: 16px; padding: 12px 14px; margin: 0; font-size: 15px; text-align: left; font: inherit; width: 100%; }
+.warn-b { background: #FBF1D9; border: 2px solid #B8913A; color: #4A3A12; }
+.alert-b { background: var(--redbg); border: 2px solid var(--red); color: #6E2416; }
+.matched-row { display: flex; justify-content: space-between; align-items: center; border-radius: 18px; padding: 14px 16px; min-height: 56px; font: inherit; color: inherit; width: 100%; }
+.line { border-radius: 18px; padding: 12px 14px; display: flex; gap: 10px; align-items: center; }
+.line.stack-sm { align-items: stretch; }
+.amt { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.amt-big { font-size: 24px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.field { display: grid; gap: 6px; font-weight: 700; font-size: 14px; }
+.field input, .field select { width: 100%; }
+select.amber { border: 2px solid #B8913A; background: #FBF1D9; }
+.chips { flex-wrap: wrap; }
+.file-btn { display: grid; place-items: center; cursor: pointer; text-align: center; }
+.danger-t { color: var(--red); }
+.item-btn { font: inherit; color: inherit; cursor: pointer; }
+
+/* ── Spending ── */
+.seg { display: flex; border: 2px solid var(--green); border-radius: 16px; overflow: hidden; align-self: flex-start; }
+.seg button { min-height: 48px; padding: 0 22px; border: 0; background: #fff; color: var(--green); font-weight: 700; }
+.seg button.on { background: var(--green); color: #F5F1E6; }
+.month-h { gap: 8px; flex-wrap: wrap; }
+.trip { display: flex; align-items: center; gap: 12px; border-radius: 20px; padding: 14px 16px; min-height: 72px; text-align: left; width: 100%; }
+.trip strong { font-size: 18px; }
+.back { align-self: flex-start; padding: 0; }
+.receipt-img { width: 100%; border-radius: 16px; border: 1px solid var(--line); }
