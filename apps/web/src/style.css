@@ -79,3 +79,11 @@ button.ghost { min-height: 56px; border-radius: 28px; border: 2px solid var(--gr
 .app.center main.card { padding: 24px; border-radius: 24px; display: grid; gap: 12px; }
 .app.center main.card button:not(.ghost) { min-height: 56px; border-radius: 28px; border: 0; background: var(--green); color: #F5F1E6; font-weight: 700; font-size: 17px; }
 .app.center main.card button:disabled { opacity: .5; }
+
+/* sheets and forms */
+.sheet label { display: grid; gap: 6px; font-weight: 700; font-size: 14px; }
+.sheet select, .sheet input { width: 100%; }
+select { font: inherit; padding: 14px; border-radius: 14px; border: 1px solid var(--line); background: #fff; min-height: 52px; }
+.sheet { max-height: 92%; overflow-y: auto; }
+button.item { width: 100%; text-align: left; font: inherit; color: inherit; }
+button.ghost.danger { border-color: var(--red); color: #8A2D1C; }

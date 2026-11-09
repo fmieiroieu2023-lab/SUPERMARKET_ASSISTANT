@@ -11,3 +11,5 @@ const page =
     <App />
   );
 createRoot(document.getElementById("root")!).render(page);
+
+if ("serviceWorker" in navigator && import.meta.env.PROD) void navigator.serviceWorker.register("/sw.js");

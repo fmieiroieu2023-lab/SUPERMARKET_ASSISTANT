@@ -1,5 +1,5 @@
 // App shell (step 3, slice 1): sign-in, bottom bar, Home and Pantry reading the same database functions Claude uses.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { FAMILY_ICON, FAMILY_ORDER, familyOf, type Family } from "./families";
@@ -68,6 +68,7 @@ function Shell() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [err, setErr] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  const [selected, setSelected] = useState<Lot | null>(null);
 
   const load = useCallback(async () => {
     const [o, ok, expired] = await Promise.all([
@@ -93,19 +94,12 @@ function Shell() {
       <main className="screen">
         {err && <p className="err pad">{err}</p>}
         {tab === "home" && <Home lots={lots} attention={attention} count={attentionCount} onAttention={() => go("pantry", true)} onPantry={() => go("pantry")} />}
-        {tab === "pantry" && <Pantry lots={lots} onlyFlag={onlyFlag} setOnlyFlag={setOnlyFlag} total={overview?.in_stock ?? 0} />}
+        {tab === "pantry" && <Pantry lots={lots} onlyFlag={onlyFlag} setOnlyFlag={setOnlyFlag} total={overview?.in_stock ?? 0} onSelect={setSelected} />}
         {tab === "list" && <Soon title="Shopping list" note="Arrives with the shopping-list step." />}
         {tab === "budget" && <Soon title="Budget" note="Arrives with the budget step." />}
       </main>
-      {addOpen && (
-        <div className="sheet-back" onClick={() => setAddOpen(false)}>
-          <div className="sheet" onClick={(e) => e.stopPropagation()}>
-            <h2 className="serif">Add a shop</h2>
-            <p className="muted">The receipt camera comes in the next slice. For now you can ask Claude to log a shop.</p>
-            <button className="primary" onClick={() => setAddOpen(false)}>OK</button>
-          </div>
-        </div>
-      )}
+      {addOpen && <AddSheet onClose={() => setAddOpen(false)} onDone={() => { setAddOpen(false); void load(); }} />}
+      {selected && <LotSheet lot={selected} onClose={() => setSelected(null)} onDone={() => { setSelected(null); void load(); }} />}
       <nav className="bar" aria-label="Main">
         <TabBtn label="Home" on={tab === "home"} onClick={() => go("home")} d="M4 11 12 4l8 7v9h-5v-6H9v6H4z" />
         <TabBtn label="Pantry" on={tab === "pantry"} onClick={() => go("pantry")} d="M4 8h16v12H4zM3 4h18v4H3zM10 12h4" />
@@ -168,7 +162,7 @@ function Home({ lots, attention, count, onAttention, onPantry }: { lots: Lot[] |
   );
 }
 
-function Pantry({ lots, onlyFlag, setOnlyFlag, total }: { lots: Lot[] | null; onlyFlag: boolean; setOnlyFlag: (v: boolean) => void; total: number }) {
+function Pantry({ lots, onlyFlag, setOnlyFlag, total, onSelect }: { lots: Lot[] | null; onlyFlag: boolean; setOnlyFlag: (v: boolean) => void; total: number; onSelect: (l: Lot) => void }) {
   const groups = useMemo(() => {
     const by = new Map<Family, Lot[]>();
     for (const l of lots ?? []) {
@@ -193,7 +187,7 @@ function Pantry({ lots, onlyFlag, setOnlyFlag, total }: { lots: Lot[] | null; on
           <section key={family} className="stack-sm">
             <div className="group-h"><h2 className="serif">{family}</h2><span className="muted">{ls.length}</span>{n > 0 && <span className="red-t">{n} needs attention</span>}</div>
             {ls.map((l) => { const d = daysLabel(l); const flag = needsAttention(l); const fi = FAMILY_ICON[family]; return (
-              <div key={l.lot_id} className={`item ${flag ? "alert" : "card"}`}>
+              <button key={l.lot_id} className={`item ${flag ? "alert" : "card"}`} onClick={() => onSelect(l)}>
                 <div className={flag ? "halo" : ""} style={{ position: "relative" }}>
                   <Tile id={fi.id} bg={fi.tile} />
                   {flag && <span className="badge" aria-label="Needs attention">!</span>}
@@ -204,10 +198,82 @@ function Pantry({ lots, onlyFlag, setOnlyFlag, total }: { lots: Lot[] | null; on
                   {flag && <div className="red-t">Use soon</div>}
                 </div>
                 {d.n && <div className="days"><span className="serif" style={{ color: flag ? "var(--red)" : undefined }}>{d.n}</span><span className="muted">{d.u}</span></div>}
-              </div>); })}
+              </button>); })}
           </section>
         );
       })}
+    </div>
+  );
+}
+
+type Cat = { id: string; name_es: string };
+
+function AddSheet({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [cats, setCats] = useState<Cat[]>([]);
+  const [name, setName] = useState("");
+  const [cat, setCat] = useState("");
+  const [qty, setQty] = useState("1");
+  const [unit, setUnit] = useState("unit");
+  const [date, setDate] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const lotId = useRef(crypto.randomUUID()); // one id per sheet: a double tap cannot add twice
+  useEffect(() => {
+    void supabase.from("categories").select("id,name_es").eq("is_food", true).order("name_es").then(({ data }) => {
+      setCats((data as Cat[]) ?? []);
+    });
+  }, []);
+  async function save(e: React.FormEvent) {
+    e.preventDefault(); setBusy(true); setErr("");
+    const { error } = await supabase.rpc("add_item", {
+      p_lot_id: lotId.current, p_name: name, p_category: cat, p_qty: Number(qty), p_unit: unit, p_expires_on: date || null,
+    });
+    setBusy(false);
+    if (error) setErr(error.message); else onDone();
+  }
+  return (
+    <div className="sheet-back" onClick={onClose}>
+      <form className="sheet" onClick={(e) => e.stopPropagation()} onSubmit={save}>
+        <h2 className="serif">Add an item</h2>
+        <label>What is it<input value={name} onChange={(e) => setName(e.target.value)} required placeholder="Chicken breast" /></label>
+        <label>Type<select value={cat} onChange={(e) => setCat(e.target.value)} required>
+          <option value="">Choose…</option>{cats.map((c) => <option key={c.id} value={c.id}>{c.name_es}</option>)}
+        </select></label>
+        <div className="row">
+          <label>How much<input type="number" inputMode="decimal" min="0" step="any" value={qty} onChange={(e) => setQty(e.target.value)} required /></label>
+          <label>Unit<select value={unit} onChange={(e) => setUnit(e.target.value)}><option value="unit">items</option><option value="g">grams</option><option value="ml">ml</option></select></label>
+        </div>
+        <label>Date on the pack <span className="muted">(optional, otherwise I estimate)</span><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+        {err && <p className="err">{err}</p>}
+        <button className="primary" disabled={busy}>{busy ? "Saving…" : "Add to pantry"}</button>
+        <button type="button" className="ghost" onClick={onClose}>Cancel</button>
+      </form>
+    </div>
+  );
+}
+
+function LotSheet({ lot, onClose, onDone }: { lot: Lot; onClose: () => void; onDone: () => void }) {
+  const [qty, setQty] = useState(String(Number(lot.qty_left)));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const moveId = useRef(crypto.randomUUID());
+  async function run(reason: "consume" | "discard") {
+    setBusy(true); setErr("");
+    const { error } = await supabase.rpc("consume", { p_lot: lot.lot_id, p_qty: Number(qty), p_reason: reason, p_movement_id: moveId.current });
+    setBusy(false);
+    if (error) setErr(error.message); else onDone();
+  }
+  return (
+    <div className="sheet-back" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <h2 className="serif">{lot.name}</h2>
+        <p className="muted">{Number(lot.qty_left)} {lot.unit} left{lot.expires_on ? ` · date ${lot.expires_on}` : ""}</p>
+        <label>How much<input type="number" inputMode="decimal" min="0" step="any" value={qty} onChange={(e) => setQty(e.target.value)} /></label>
+        {err && <p className="err">{err}</p>}
+        <button className="primary" disabled={busy} onClick={() => run("consume")}>I used it</button>
+        <button className="ghost danger" disabled={busy} onClick={() => run("discard")}>I threw it away</button>
+        <button className="ghost" onClick={onClose}>Close</button>
+      </div>
     </div>
   );
 }
