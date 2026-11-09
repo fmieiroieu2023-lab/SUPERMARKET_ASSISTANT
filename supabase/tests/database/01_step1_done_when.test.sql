@@ -97,13 +97,17 @@ select is(public.consume((select id from lot), 10, 'consume', 'e0000000-0000-000
 reset role;
 
 -- 5. quick total + receipt: one trip, no double count ---------------------------------
+-- Times are clamped to today (Madrid) so the test also passes just after midnight (same-day rule).
+create function pg_temp.ago(i interval) returns timestamptz language sql stable as $$
+  select greatest(now() - i, (date_trunc('day', now() at time zone 'Europe/Madrid')) at time zone 'Europe/Madrid') $$;
+grant execute on function pg_temp.ago(interval) to public;
 select pg_temp.as_user('aaaaaaaa-0000-0000-0000-000000000001');
 insert into public.purchases (id, household_id, chain_id, purchased_at, time_source, status, source, total_cents, created_via)
-  values ('c0000000-0000-0000-0000-000000000002', pg_temp.hh('aaaaaaaa-0000-0000-0000-000000000001'), 'supercor', now() - interval '1 hour', 'entered', 'draft', 'manual', 4560, 'app');
+  values ('c0000000-0000-0000-0000-000000000002', pg_temp.hh('aaaaaaaa-0000-0000-0000-000000000001'), 'supercor', pg_temp.ago('1 hour'), 'entered', 'draft', 'manual', 4560, 'app');
 select is(public.confirm_purchase('c0000000-0000-0000-0000-000000000002') ->> 'verification', 'total_only', 'quick total confirms as total_only');
 
 insert into public.purchases (id, household_id, chain_id, purchased_at, time_source, status, source, total_cents, created_via, parse_output)
-  values ('c0000000-0000-0000-0000-000000000003', pg_temp.hh('aaaaaaaa-0000-0000-0000-000000000001'), 'supercor', now() - interval '65 minutes', 'printed', 'draft', 'receipt_photo', 4560, 'app',
+  values ('c0000000-0000-0000-0000-000000000003', pg_temp.hh('aaaaaaaa-0000-0000-0000-000000000001'), 'supercor', pg_temp.ago('65 minutes'), 'printed', 'draft', 'receipt_photo', 4560, 'app',
           '{"ticket_number":"0123-456"}');
 insert into public.purchase_items (id, purchase_id, household_id, line_no, kind, raw_text, product_id, printed_qty, printed_unit, line_total_cents)
   values ('d0000000-0000-0000-0000-000000000002', 'c0000000-0000-0000-0000-000000000003', pg_temp.hh('aaaaaaaa-0000-0000-0000-000000000001'),
@@ -115,7 +119,7 @@ select is((select sum(total_cents)::int from public.purchases where chain_id = '
 
 -- 6. a different quick total after a receipt is flagged, and merging keeps the receipt's figure ----
 insert into public.purchases (id, household_id, chain_id, purchased_at, time_source, status, source, total_cents, created_via, parse_output)
-  values ('c0000000-0000-0000-0000-000000000004', pg_temp.hh('aaaaaaaa-0000-0000-0000-000000000001'), 'carrefour', now() - interval '2 hours', 'printed', 'draft', 'receipt_photo', 4560, 'app',
+  values ('c0000000-0000-0000-0000-000000000004', pg_temp.hh('aaaaaaaa-0000-0000-0000-000000000001'), 'carrefour', pg_temp.ago('2 hours'), 'printed', 'draft', 'receipt_photo', 4560, 'app',
           '{"ticket_number":"9999-001"}');
 insert into public.purchase_items (id, purchase_id, household_id, line_no, kind, raw_text, product_id, printed_qty, printed_unit, line_total_cents)
   values ('d0000000-0000-0000-0000-000000000003', 'c0000000-0000-0000-0000-000000000004', pg_temp.hh('aaaaaaaa-0000-0000-0000-000000000001'),

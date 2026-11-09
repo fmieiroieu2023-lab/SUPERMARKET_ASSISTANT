@@ -198,7 +198,16 @@ importers:
 
   packages/shared: {}
 
+  tools/sqltest:
+    dependencies:
+      '@electric-sql/pglite':
+        specifier: 0.3.16
+        version: 0.3.16
+
 packages:
+
+  '@electric-sql/pglite@0.3.16':
+    resolution: {integrity: sha512-mZkZfOd9OqTMHsK+1cje8OSzfAQcpD7JmILXTl5ahdempjUDdmg4euf1biDex5/LfQIDJ3gvCu6qDgdnDxfJmA==}
 
   '@oxc-project/types@0.156.0':
     resolution: {integrity: sha512-1Duyg48TdJNdyhEB8Xn1L36bT9Pv6GUtlKjHxOys8xkaF/rQq3XJE+bAurSK/AgIz5mGFsb77cn9Pb20+WCScw==}
@@ -670,6 +679,8 @@ packages:
         optional: true
 
 snapshots:
+
+  '@electric-sql/pglite@0.3.16': {}
 
   '@oxc-project/types@0.156.0': {}
 

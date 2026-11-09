@@ -1,0 +1,8 @@
+{
+  "name": "sqltest",
+  "private": true,
+  "type": "module",
+  "description": "Runs supabase/migrations + supabase/tests/database/*.test.sql in an in-process Postgres (PGlite). No Docker needed.",
+  "scripts": { "test": "node run.mjs" },
+  "dependencies": { "@electric-sql/pglite": "0.3.16" }
+}
