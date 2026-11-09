@@ -82,13 +82,21 @@ async function handle(db: Db, msg: any) {
     case "tools/call": {
       const name = msg.params?.name as string;
       const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
-      const { data, error } = await callTool(db, name, args);
+      let data: unknown = null;
+      let error: { message: string } | null = null;
+      try {
+        ({ data, error } = await callTool(db, name, args));
+      } catch (e) {
+        error = { message: e instanceof Error ? e.message : "Unexpected error" };   // never a bare 500: Claude gets a clean error, and the call is still logged
+      }
       // One audit row per call. Works even when Claude's writes are switched off.
       const { data: hh } = await db.from("household_members").select("household_id").limit(1).maybeSingle();
       if (hh?.household_id) {
-        await db.rpc("log_mcp_call", {
-          p_household: hh.household_id, p_tool: name, p_request: crypto.randomUUID(), p_args: args, p_ok: !error,
-        });
+        try {
+          await db.rpc("log_mcp_call", {
+            p_household: hh.household_id, p_tool: name, p_request: crypto.randomUUID(), p_args: args, p_ok: !error,
+          });
+        } catch { /* an audit hiccup must not break a read */ }
       }
       if (error) return ok({ isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] });
       return ok({ content: [{ type: "text", text: JSON.stringify(data) }] });

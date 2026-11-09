@@ -9,7 +9,7 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== self.location.origin) return;   // Supabase etc. go straight to the network
   e.respondWith(
-    fetch(e.request).then((res) => { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); return res; })
+    fetch(e.request).then((res) => { if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); } return res; })   // never cache an error page
       .catch(() => caches.match(e.request).then((m) => m || caches.match("/")))
   );
 });

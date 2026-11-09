@@ -1,12 +1,14 @@
+import { lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
-import { Consent } from "./Consent";
+// The consent screen is rarely used, so it loads only when needed.
+const Consent = lazy(() => import("./Consent").then((m) => ({ default: m.Consent })));
 import "./style.css";
 
 // Two pages: the Claude consent screen, and the app.
 const page =
   window.location.pathname === "/oauth/consent" ? (
-    <div className="app center"><Consent /></div>
+    <div className="app center"><Suspense fallback={null}><Consent /></Suspense></div>
   ) : (
     <App />
   );

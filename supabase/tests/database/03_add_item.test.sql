@@ -37,5 +37,10 @@ select is(pg_temp.err($$select public.add_item(gen_random_uuid(), 'Jabón', 'cle
 select is(pg_temp.err($$select public.add_item(gen_random_uuid(), '  ', 'fresh_fruit', 1)$$), 'NAME_REQUIRED', 'blank name refused');
 select is(pg_temp.err($$select public.add_item(gen_random_uuid(), 'X', 'fresh_fruit', 0)$$), 'BAD_QUANTITY', 'zero quantity refused');
 
+select is((public.app_snapshot() -> 'lots') is not null, true, 'app_snapshot returns lots');
+select is(jsonb_array_length(public.app_snapshot() -> 'lots'), 3, 'app_snapshot lists the 3 lots');
+select is((public.app_snapshot() -> 'overview' ->> 'in_stock')::int, 3, 'overview counts 3 in stock');
+select is((public.get_overview() ->> 'expiring_3_days')::int, 1, 'fresh chicken (short shelf life) counts as expiring within 3 days');
+
 select * from finish();
 rollback;

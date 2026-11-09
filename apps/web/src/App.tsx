@@ -20,10 +20,14 @@ function daysLabel(l: Lot): { n: string; u: string } {
   if (l.state === "expired") return { n: "!", u: "expired" };
   if (l.state === "check") return { n: "?", u: "check it" };
   if (l.expiry_kind === "none" || l.days_left === null) return { n: "", u: "" };
+  if (l.days_left === 0) return { n: "today", u: "" };
   const n = `${l.expiry_kind === "estimate" ? "~" : ""}${l.days_left}`;
   return { n, u: l.days_left === 1 ? "day" : "days" };
 }
-const qtyLabel = (l: Lot) => `${Number(l.qty_left)} ${l.unit} · ${l.location}`;
+const unitLabel = (u: string, n: number) => (u === "unit" ? (n === 1 ? "item" : "items") : u);
+const qtyLabel = (l: Lot) => `${Number(l.qty_left)} ${unitLabel(l.unit, Number(l.qty_left))} · ${l.location}`;
+// Raw database errors mean nothing to a shopper; show a short human sentence instead.
+const friendly = (m: string) => (/fetch|network|load failed/i.test(m) ? "No connection. Check your internet and try again." : /jwt|auth/i.test(m) ? "Your session ended. Please sign in again." : "Something went wrong. Please try again.");
 
 export function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
@@ -71,18 +75,21 @@ function Shell() {
   const [selected, setSelected] = useState<Lot | null>(null);
 
   const load = useCallback(async () => {
-    const [o, ok, expired] = await Promise.all([
-      supabase.rpc("get_overview"),
-      supabase.rpc("list_pantry", { p_limit: 200 }),
-      supabase.rpc("list_pantry", { p_state: "expired", p_limit: 200 }),
-    ]);
-    const bad = o.error ?? ok.error ?? expired.error;
-    if (bad) return setErr(bad.message);
+    // One call (app_snapshot) instead of three: faster, and the numbers and the list always agree.
+    const { data, error } = await supabase.rpc("app_snapshot");
+    if (error) return setErr(friendly(error.message));
     setErr("");
-    setOverview(o.data as Overview);
-    setLots([...(expired.data as { lots: Lot[] }).lots, ...(ok.data as { lots: Lot[] }).lots]);
+    const snap = data as { overview: Overview; lots: Lot[] };
+    setOverview(snap.overview);
+    setLots(snap.lots);
   }, []);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+    // Reopening the app from the home screen shows fresh data, not what was there yesterday.
+    const onVisible = () => { if (document.visibilityState === "visible") void load(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [load]);
 
   const attention = useMemo(() => (lots ?? []).filter(needsAttention), [lots]);
   const attentionCount = overview ? overview.expired + overview.expiring_3_days + overview.to_check : attention.length;
@@ -92,7 +99,7 @@ function Shell() {
     <div className="app">
       <IconSprite />
       <main className="screen">
-        {err && <p className="err pad">{err}</p>}
+        {err && <p className="err pad">{err} <button className="link" onClick={() => void load()}>Retry</button></p>}
         {tab === "home" && <Home lots={lots} attention={attention} count={attentionCount} onAttention={() => go("pantry", true)} onPantry={() => go("pantry")} />}
         {tab === "pantry" && <Pantry lots={lots} onlyFlag={onlyFlag} setOnlyFlag={setOnlyFlag} total={overview?.in_stock ?? 0} onSelect={setSelected} />}
         {tab === "list" && <Soon title="Shopping list" note="Arrives with the shopping-list step." />}
@@ -229,8 +236,9 @@ function AddSheet({ onClose, onDone }: { onClose: () => void; onDone: () => void
       p_lot_id: lotId.current, p_name: name, p_category: cat, p_qty: Number(qty), p_unit: unit, p_expires_on: date || null,
     });
     setBusy(false);
-    if (error) setErr(error.message); else onDone();
+    if (error) setErr(friendly(error.message)); else onDone();
   }
+  const past = date !== "" && date < new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Madrid" });
   return (
     <div className="sheet-back" onClick={onClose}>
       <form className="sheet" onClick={(e) => e.stopPropagation()} onSubmit={save}>
@@ -244,6 +252,7 @@ function AddSheet({ onClose, onDone }: { onClose: () => void; onDone: () => void
           <label>Unit<select value={unit} onChange={(e) => setUnit(e.target.value)}><option value="unit">items</option><option value="g">grams</option><option value="ml">ml</option></select></label>
         </div>
         <label>Date on the pack <span className="muted">(optional, otherwise I estimate)</span><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+        {past && <p className="err">That date has already passed. It will be marked expired.</p>}
         {err && <p className="err">{err}</p>}
         <button className="primary" disabled={busy}>{busy ? "Saving…" : "Add to pantry"}</button>
         <button type="button" className="ghost" onClick={onClose}>Cancel</button>
@@ -261,13 +270,13 @@ function LotSheet({ lot, onClose, onDone }: { lot: Lot; onClose: () => void; onD
     setBusy(true); setErr("");
     const { error } = await supabase.rpc("consume", { p_lot: lot.lot_id, p_qty: Number(qty), p_reason: reason, p_movement_id: moveId.current });
     setBusy(false);
-    if (error) setErr(error.message); else onDone();
+    if (error) setErr(friendly(error.message)); else onDone();
   }
   return (
     <div className="sheet-back" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <h2 className="serif">{lot.name}</h2>
-        <p className="muted">{Number(lot.qty_left)} {lot.unit} left{lot.expires_on ? ` · date ${lot.expires_on}` : ""}</p>
+        <p className="muted">{Number(lot.qty_left)} {unitLabel(lot.unit, Number(lot.qty_left))} left{lot.expires_on ? ` · date ${lot.expires_on}` : ""}</p>
         <label>How much<input type="number" inputMode="decimal" min="0" step="any" value={qty} onChange={(e) => setQty(e.target.value)} /></label>
         {err && <p className="err">{err}</p>}
         <button className="primary" disabled={busy} onClick={() => run("consume")}>I used it</button>
