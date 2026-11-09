@@ -145,3 +145,6 @@ a.ghost { min-height: 56px; border-radius: 28px; border: 2px solid var(--green);
 .hist { padding: 8px 0; border-bottom: 1px solid var(--line); gap: 10px; }
 .mini.item-btn { text-align: left; }
 @media (prefers-reduced-motion: reduce) { .swipe > button { transition: none; } }
+.price-btn { background: none; border: 0; border-bottom: 2px dotted var(--muted); min-height: 44px; font: inherit; font-weight: 700; color: inherit; padding: 0 2px; }
+.price-edit { display: flex; gap: 6px; align-items: center; }
+.price-edit input { width: 86px; min-height: 44px; padding: 6px 8px; }

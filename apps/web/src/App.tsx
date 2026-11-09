@@ -135,7 +135,7 @@ function Shell() {
           {tab === "pantry" && <Pantry lots={lots} onlyFlag={onlyFlag} setOnlyFlag={setOnlyFlag} total={overview?.in_stock ?? 0}
             onSelect={(l) => setItemId(l.lot_id)} onSwipe={swipe} />}
           {tab === "list" && <Soon title="Shopping list" note="Arrives with the shopping-list step." />}
-          {tab === "spending" && <Spending openTrip={openTrip} onOpenTrip={setOpenTrip} onResume={(id) => setReceipt({ resumeId: id })} />}
+          {tab === "spending" && <Spending openTrip={openTrip} onOpenTrip={setOpenTrip} onResume={(id) => setReceipt({ resumeId: id })} onChanged={changed} />}
         </>}
       </main>
       {addOpen && <AddSheet onClose={() => setAddOpen(false)} onDone={() => { setAddOpen(false); void load(); }}

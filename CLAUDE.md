@@ -15,5 +15,6 @@ Grocery/pantry web app + Claude MCP connector. Owner: Francisco (not a professio
 ## Commands
 - Web: `pnpm --filter web dev` / `build`
 - DB: `supabase db reset` (local), `supabase db push` (remote), `supabase test db`
+- SQL tests without Docker: `pnpm --filter sqltest test` (PGlite; all migrations + tests)
 - Functions: `supabase functions deploy <name>`
 - Scheduler: `pnpm --filter scheduler deploy`
