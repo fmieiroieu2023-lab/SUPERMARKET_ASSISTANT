@@ -16,7 +16,7 @@ type Review = {
   duplicate: { verdict: string; other_purchase_id: string | null; evidence: string | null; notice: string | null };
   lines: RLine[];
 };
-type Edit = { action: "match" | "new" | "spend"; product_id?: string; name?: string; category_id?: string | null; ingredient_id?: string | null; unit?: string };
+type Edit = { action: "match" | "new" | "spend"; product_id?: string; name?: string; category_id?: string | null; ingredient_id?: string | null; unit?: string; pack_size?: number | null };
 type Cat = { id: string; name_es: string; is_food: boolean };
 type Ing = { id: string; name_es: string };
 type DateRow = { lot_id: string; name: string; expires_on: string; expiry_kind: string };
@@ -144,6 +144,7 @@ export function ReceiptFlow({ files, resumeId, onClose, onSaved }: {
       if (m.includes("SUM_MISMATCH")) return setAsk({ kind: "sum", missing });
       if (m.includes("POSSIBLE_DUPLICATE")) return setAsk({ kind: "dup", other: error.hint ?? "", evidence: error.details ?? "" });
       if (m.includes("ALREADY_LOGGED")) return setAsk({ kind: "logged", other: error.hint ?? null });
+      if (m.includes("UNIT_MISMATCH") || m.includes("NEEDS_PACK_SIZE")) setShowMatched(true);
       return setErr(friendly(m));
     }
     const res = data as { purchase_id: string; check_dates?: DateRow[]; notice?: string };
@@ -218,9 +219,12 @@ export function ReceiptFlow({ files, resumeId, onClose, onSaved }: {
               <span className="muted">{showMatched ? "Hide" : "Show"}</span>
             </button>
           )}
-          {showMatched && matched.map((l) => (
-            <div key={l.line_no} className="line card"><div className="grow"><strong>{l.product_name}</strong><div className="muted">{l.raw_text}</div></div><span className="amt">{euro(l.line_total_cents)}</span></div>
-          ))}
+          {showMatched && matched.map((l) => { const sp = edits[l.line_no]?.action === "spend"; return (
+            <div key={l.line_no} className="line card">
+              <div className="grow"><strong>{l.product_name}</strong><div className="muted">{l.raw_text}{sp ? " · spend only" : ""}</div></div>
+              <span className="amt">{euro(l.line_total_cents)}</span>
+              <button className="chip" onClick={() => setEdit(l.line_no, sp ? null : { action: "spend", category_id: l.category_id })}>{sp ? "Undo" : "Spend only"}</button>
+            </div>); })}
 
           {open.map((l) => (
             <LineCard key={l.line_no} l={l} e={edits[l.line_no] ?? null} cats={cats} foodCats={foodCats} ings={ings}
@@ -287,6 +291,11 @@ function LineCard({ l, e, cats, foodCats, ings, newId, onChange }: {
               <option value="unit">items</option><option value="g">grams</option><option value="ml">ml</option>
             </select></label>
           </div>
+          {e.unit !== "unit" && l.printed_unit === "pack" && (
+            <label className="field">How much is one pack ({e.unit === "g" ? "grams" : "ml"})?
+              <input type="number" inputMode="decimal" min="1" placeholder={e.unit === "g" ? "500" : "1000"} value={e.pack_size ?? ""}
+                     onChange={(x) => onChange({ ...e, pack_size: x.target.value ? Number(x.target.value) : null })} /></label>
+          )}
           <label className="field">Ingredient <span className="muted small">(links recipes and the shopping list)</span>
             <select value={e.ingredient_id ?? ""} onChange={(x) => onChange({ ...e, ingredient_id: x.target.value || null })} className={e.ingredient_id ? "" : "amber"}>
               <option value="">Set ingredient…</option>{ings.map((i) => <option key={i.id} value={i.id}>{i.name_es}</option>)}
