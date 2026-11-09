@@ -1,0 +1,8 @@
+{
+  "name": "receipt-eval",
+  "private": true,
+  "type": "module",
+  "description": "Sends real receipt photos through parse-receipt on dev and scores them against hand-typed totals (step 4 'done when').",
+  "scripts": { "eval": "node run.mjs" },
+  "dependencies": { "@supabase/supabase-js": "^2.119.0" }
+}

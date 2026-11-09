@@ -198,6 +198,12 @@ importers:
 
   packages/shared: {}
 
+  tools/receipt-eval:
+    dependencies:
+      '@supabase/supabase-js':
+        specifier: ^2.119.0
+        version: 2.119.0
+
   tools/sqltest:
     dependencies:
       '@electric-sql/pglite':
