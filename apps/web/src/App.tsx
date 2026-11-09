@@ -6,7 +6,8 @@ import { FAMILY_ICON, FAMILY_ORDER, familyOf, type Family } from "./families";
 import { IconSprite, Tile } from "./Icons";
 import { ReceiptFlow } from "./Receipt";
 import { Spending } from "./Spending";
-import { dayLabel, friendly } from "./shared";
+import { dayLabel, euro, friendly } from "./shared";
+import { ItemPage, UndoBar, takeFromLot, type UndoFn } from "./Item";
 
 type Lot = {
   lot_id: string; name: string; category: string; location: string; qty_left: number; unit: string;
@@ -28,7 +29,8 @@ function daysLabel(l: Lot): { n: string; u: string } {
   return { n, u: l.days_left === 1 ? "day" : "days" };
 }
 const unitLabel = (u: string, n: number) => (u === "unit" ? (n === 1 ? "item" : "items") : u);
-const qtyLabel = (l: Lot) => `${Number(l.qty_left)} ${unitLabel(l.unit, Number(l.qty_left))} · ${l.location}`;
+const PLACE_WORD: Record<string, string> = { fridge: "fridge", freezer: "freezer", pantry: "cupboard" };
+const qtyLabel = (l: Lot) => `${Number(l.qty_left)} ${unitLabel(l.unit, Number(l.qty_left))} · ${PLACE_WORD[l.location] ?? l.location}`;
 
 
 export function App() {
@@ -74,10 +76,12 @@ function Shell() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [err, setErr] = useState("");
   const [addOpen, setAddOpen] = useState(false);
-  const [selected, setSelected] = useState<Lot | null>(null);
+  const [itemId, setItemId] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<{ files?: File[]; resumeId?: string } | null>(null);
   const [openTrip, setOpenTrip] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<{ purchase_id: string; created_at: string }[]>([]);
+  const [lastTrip, setLastTrip] = useState<LastTrip | null>(null);
+  const [undo, setUndo] = useState<UndoFn | null>(null);
 
   const load = useCallback(async () => {
     // One call (app_snapshot) instead of three: faster, and the numbers and the list always agree.
@@ -87,9 +91,10 @@ function Shell() {
     const snap = data as { overview: Overview; lots: Lot[] };
     setOverview(snap.overview);
     setLots(snap.lots);
-    // Unfinished receipts (Resume or discard). Quietly skipped if the receipts update isn't on the server yet.
+    // Last shop + unfinished receipts. Quietly skipped if the receipts update isn't on the server yet.
     const p = await supabase.rpc("list_purchases", { p_limit: 1 });
-    setDrafts(p.error ? [] : (p.data as { drafts: { purchase_id: string; created_at: string }[] }).drafts);
+    const pd = p.error ? null : (p.data as { drafts: { purchase_id: string; created_at: string }[]; trips: LastTrip[] });
+    setDrafts(pd?.drafts ?? []); setLastTrip(pd?.trips[0] ?? null);
   }, []);
   useEffect(() => {
     void load();
@@ -99,33 +104,46 @@ function Shell() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [load]);
 
+  // A new screen starts at the top.
+  const screen = useRef<HTMLElement>(null);
+  useEffect(() => { screen.current?.scrollTo(0, 0); }, [tab, itemId, openTrip]);
+
   const attention = useMemo(() => (lots ?? []).filter(needsAttention), [lots]);
   const attentionCount = overview ? overview.expired + overview.expiring_3_days + overview.to_check : attention.length;
+  const changed = (u: UndoFn | null) => { if (u) setUndo(u); void load(); };
+  const swipe = (l: Lot, reason: "consume" | "discard") => {
+    void takeFromLot(l.lot_id, Number(l.qty_left), reason, l.name).then(changed).catch((e) => setErr(friendly(String(e))));
+  };
+  const openTripFrom = (id: string) => { setItemId(null); setTab("spending"); setOpenTrip(id); };
 
-  const go = (t: Tab, flag = false) => { setTab(t); setOnlyFlag(flag); };
+  const go = (t: Tab, flag = false) => { setTab(t); setOnlyFlag(flag); setItemId(null); };
   return (
     <div className="app">
       <IconSprite />
-      <main className="screen">
+      <main className="screen" ref={screen}>
         {err && <p className="err pad">{err} <button className="link" onClick={() => void load()}>Retry</button></p>}
-        {tab === "home" && drafts[0] && (
-          <div className="pad" style={{ paddingBottom: 0 }}>
-            <button className="banner warn-b item-btn" onClick={() => setReceipt({ resumeId: drafts[0].purchase_id })}>
-              Unfinished receipt from {dayLabel(drafts[0].created_at.slice(0, 10))}. Tap to finish or discard.
-            </button>
-          </div>
-        )}
-        {tab === "home" && <Home lots={lots} attention={attention} count={attentionCount} onAttention={() => go("pantry", true)} onPantry={() => go("pantry")} />}
-        {tab === "pantry" && <Pantry lots={lots} onlyFlag={onlyFlag} setOnlyFlag={setOnlyFlag} total={overview?.in_stock ?? 0} onSelect={setSelected} />}
-        {tab === "list" && <Soon title="Shopping list" note="Arrives with the shopping-list step." />}
-        {tab === "spending" && <Spending openTrip={openTrip} onOpenTrip={setOpenTrip} onResume={(id) => setReceipt({ resumeId: id })} />}
+        {itemId ? <ItemPage lotId={itemId} onBack={() => setItemId(null)} onChanged={changed} onOpenTrip={openTripFrom} /> : <>
+          {tab === "home" && drafts[0] && (
+            <div className="pad" style={{ paddingBottom: 0 }}>
+              <button className="banner warn-b item-btn" onClick={() => setReceipt({ resumeId: drafts[0].purchase_id })}>
+                Unfinished receipt from {dayLabel(drafts[0].created_at.slice(0, 10))}. Tap to finish or discard.
+              </button>
+            </div>
+          )}
+          {tab === "home" && <Home lots={lots} attention={attention} count={attentionCount} lastTrip={lastTrip}
+            onAttention={() => go("pantry", true)} onPantry={() => go("pantry")} onItem={setItemId} onTrip={openTripFrom} />}
+          {tab === "pantry" && <Pantry lots={lots} onlyFlag={onlyFlag} setOnlyFlag={setOnlyFlag} total={overview?.in_stock ?? 0}
+            onSelect={(l) => setItemId(l.lot_id)} onSwipe={swipe} />}
+          {tab === "list" && <Soon title="Shopping list" note="Arrives with the shopping-list step." />}
+          {tab === "spending" && <Spending openTrip={openTrip} onOpenTrip={setOpenTrip} onResume={(id) => setReceipt({ resumeId: id })} />}
+        </>}
       </main>
       {addOpen && <AddSheet onClose={() => setAddOpen(false)} onDone={() => { setAddOpen(false); void load(); }}
                             onReceipt={(files) => { setAddOpen(false); setReceipt({ files }); }} />}
       {receipt && <ReceiptFlow files={receipt.files} resumeId={receipt.resumeId}
                                onClose={() => { setReceipt(null); void load(); }}
-                               onSaved={(id) => { setReceipt(null); setTab("spending"); setOpenTrip(id); void load(); }} />}
-      {selected && <LotSheet lot={selected} onClose={() => setSelected(null)} onDone={() => { setSelected(null); void load(); }} />}
+                               onSaved={(id) => { setReceipt(null); setItemId(null); setTab("spending"); setOpenTrip(id); void load(); }} />}
+      {undo && <UndoBar undo={undo} onDone={() => { setUndo(null); void load(); }} />}
       <nav className="bar" aria-label="Main">
         <TabBtn label="Home" on={tab === "home"} onClick={() => go("home")} d="M4 11 12 4l8 7v9h-5v-6H9v6H4z" />
         <TabBtn label="Pantry" on={tab === "pantry"} onClick={() => go("pantry")} d="M4 8h16v12H4zM3 4h18v4H3zM10 12h4" />
@@ -136,6 +154,8 @@ function Shell() {
     </div>
   );
 }
+
+type LastTrip = { purchase_id: string; chain: string; local_date: string; total_cents: number; items: number };
 
 function TabBtn({ label, on, onClick, d }: { label: string; on: boolean; onClick: () => void; d: string }) {
   return (
@@ -150,24 +170,30 @@ function Soon({ title, note }: { title: string; note: string }) {
   return <div className="pad"><h1 className="serif">{title}</h1><p className="muted">{note}</p></div>;
 }
 
-function Home({ lots, attention, count, onAttention, onPantry }: { lots: Lot[] | null; attention: Lot[]; count: number; onAttention: () => void; onPantry: () => void }) {
+// "Ask Claude" (D17): opens Claude with a question ready; Claude answers with the Supermarket connector.
+const ASK = "https://claude.ai/new?q=" + encodeURIComponent("Using my Supermarket connector: what should I cook in the next few days with what expires soonest in my pantry?");
+
+function Home({ lots, attention, count, lastTrip, onAttention, onPantry, onItem, onTrip }: {
+  lots: Lot[] | null; attention: Lot[]; count: number; lastTrip: LastTrip | null;
+  onAttention: () => void; onPantry: () => void; onItem: (id: string) => void; onTrip: (id: string) => void;
+}) {
   const first = attention[0] ?? (lots ?? []).find((l) => l.expiry_kind !== "none");
   const soon = (lots ?? []).filter((l) => l.expiry_kind !== "none").slice(0, 6);
   return (
     <div className="pad stack">
       <p className="muted">{new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</p>
-      {lots && !first && <div className="card pad"><h2 className="serif">Nothing here yet</h2><p className="muted">Tap + to add your first shop.</p></div>}
+      {lots && !first && <div className="card pad"><h2 className="serif">Nothing here yet</h2><p className="muted">Tap + and photograph your receipt.</p></div>}
       {first && (
         <section className="hero rise">
           <span className="eyebrow">USE FIRST</span>
-          <div className="hero-row">
+          <button className="hero-row hero-btn" onClick={() => onItem(first.lot_id)}>
             <div className="stage"><div className="tilt"><Tile id={FAMILY_ICON[familyOf(first.category)].id} bg={FAMILY_ICON[familyOf(first.category)].tile} size={112} /></div></div>
             <div>
               <div className="big"><span className="serif">{daysLabel(first).n || "–"}</span><span>{daysLabel(first).u}</span></div>
               <strong className="hero-name">{first.name}</strong>
               <div className="hero-sub">{qtyLabel(first)}</div>
             </div>
-          </div>
+          </button>
           {count > 0 && <button className="pill-alert" onClick={onAttention}>{count} need{count === 1 ? "s" : ""} attention</button>}
         </section>
       )}
@@ -176,44 +202,105 @@ function Home({ lots, attention, count, onAttention, onPantry }: { lots: Lot[] |
           <div className="between"><h2 className="serif">Expiring soon</h2><button className="link" onClick={onPantry}>See all</button></div>
           <div className="hscroll">
             {soon.map((l) => { const f = familyOf(l.category); const d = daysLabel(l); const flag = needsAttention(l); return (
-              <div key={l.lot_id} className={`mini ${flag ? "alert" : "card"}`}>
+              <button key={l.lot_id} className={`mini item-btn ${flag ? "alert" : "card"}`} onClick={() => onItem(l.lot_id)}>
                 <Tile id={FAMILY_ICON[f].id} bg={FAMILY_ICON[f].tile} size={68} />
                 <strong>{l.name}</strong>
                 <div className="mini-n"><span className="serif" style={{ color: flag ? "var(--red)" : undefined }}>{d.n}</span><span className="muted">{d.u}</span></div>
-              </div>); })}
+              </button>); })}
           </div>
         </section>
       )}
+      {lastTrip && (
+        <section className="stack-sm">
+          <h2 className="serif">Last shop</h2>
+          <button className="card trip item-btn" onClick={() => onTrip(lastTrip.purchase_id)}>
+            <div className="grow"><strong>{lastTrip.chain}</strong><div className="muted">{dayLabel(lastTrip.local_date)} · {lastTrip.items} items</div></div>
+            <span className="serif amt-big">{euro(lastTrip.total_cents)}</span>
+          </button>
+        </section>
+      )}
+      <a className="ghost ask" href={ASK} target="_blank" rel="noopener noreferrer">Ask Claude what to cook</a>
     </div>
   );
 }
 
-function Pantry({ lots, onlyFlag, setOnlyFlag, total, onSelect }: { lots: Lot[] | null; onlyFlag: boolean; setOnlyFlag: (v: boolean) => void; total: number; onSelect: (l: Lot) => void }) {
+// Swipe a row: right = used it all, left = threw it away. Tapping still opens the item. Undo bar follows.
+function SwipeRow({ className, onTap, onRight, onLeft, children }: {
+  className: string; onTap: () => void; onRight: () => void; onLeft: () => void; children: React.ReactNode;
+}) {
+  const [dx, setDx] = useState(0);
+  const g = useRef<{ x: number; y: number; horiz: boolean | null; moved: boolean } | null>(null);
+  const el = useRef<HTMLButtonElement>(null);
+  return (
+    <div className="swipe">
+      <div className={`swipe-bg ${dx > 0 ? "used" : dx < 0 ? "bin" : ""}`} aria-hidden="true">
+        <span>{dx > 0 ? "Used it" : ""}</span><span>{dx < 0 ? "Threw away" : ""}</span>
+      </div>
+      <button ref={el} className={className} style={{ transform: dx ? `translateX(${dx}px)` : undefined, transition: dx ? "none" : undefined }}
+        onPointerDown={(e) => { g.current = { x: e.clientX, y: e.clientY, horiz: null, moved: false }; }}
+        onPointerMove={(e) => {
+          const s = g.current; if (!s) return;
+          const ddx = e.clientX - s.x, ddy = e.clientY - s.y;
+          if (s.horiz === null && (Math.abs(ddx) > 10 || Math.abs(ddy) > 10)) {
+            s.horiz = Math.abs(ddx) > Math.abs(ddy);
+            if (s.horiz) el.current?.setPointerCapture(e.pointerId);
+          }
+          if (s.horiz) { s.moved = true; setDx(ddx); }
+        }}
+        onPointerUp={() => {
+          const s = g.current; const w = el.current?.offsetWidth ?? 300;
+          if (s?.horiz) { if (dx > w * 0.35) onRight(); else if (dx < -w * 0.35) onLeft(); }
+          setDx(0);
+          setTimeout(() => { g.current = null; }, 0);
+        }}
+        onPointerCancel={() => { setDx(0); g.current = null; }}
+        onClick={() => { if (!g.current?.moved) onTap(); }}>
+        {children}
+      </button>
+    </div>
+  );
+}
+
+const PLACES = [["all", "All"], ["fridge", "Fridge"], ["freezer", "Freezer"], ["pantry", "Cupboard"]] as const;
+
+function Pantry({ lots, onlyFlag, setOnlyFlag, total, onSelect, onSwipe }: {
+  lots: Lot[] | null; onlyFlag: boolean; setOnlyFlag: (v: boolean) => void; total: number;
+  onSelect: (l: Lot) => void; onSwipe: (l: Lot, reason: "consume" | "discard") => void;
+}) {
+  const [q, setQ] = useState("");
+  const [place, setPlace] = useState<string>("all");
   const groups = useMemo(() => {
+    const words = q.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").split(/\s+/).filter(Boolean);
     const by = new Map<Family, Lot[]>();
     for (const l of lots ?? []) {
       if (onlyFlag && !needsAttention(l)) continue;
+      if (place !== "all" && l.location !== place) continue;
+      const name = l.name.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+      if (words.length && !words.every((w) => name.includes(w))) continue;
       const f = familyOf(l.category); by.set(f, [...(by.get(f) ?? []), l]);
     }
     const urgency = (ls: Lot[]) => Math.min(...ls.map((l) => (l.state === "expired" ? -999 : l.expiry_kind === "none" ? 9999 : (l.days_left ?? 9999))));
     return [...by.entries()].sort((a, b) => urgency(a[1]) - urgency(b[1]) || FAMILY_ORDER.indexOf(a[0]) - FAMILY_ORDER.indexOf(b[0]));
-  }, [lots, onlyFlag]);
+  }, [lots, onlyFlag, place, q]);
   return (
     <div className="pad stack">
       <div className="between"><h1 className="serif">Pantry</h1><div><span className="serif num">{total}</span> <span className="muted">items</span></div></div>
+      <input type="search" className="search" placeholder="Search the pantry" aria-label="Search the pantry" value={q} onChange={(e) => setQ(e.target.value)} />
       <div className="chips">
-        <button className={`chip${onlyFlag ? "" : " on"}`} onClick={() => setOnlyFlag(false)}>All</button>
-        <button className={`chip red${onlyFlag ? " on" : ""}`} onClick={() => setOnlyFlag(true)}>Needs attention</button>
+        {PLACES.map(([id, label]) => <button key={id} className={`chip${place === id && !onlyFlag ? " on" : ""}`} onClick={() => { setPlace(id); setOnlyFlag(false); }}>{label}</button>)}
+        <button className={`chip red${onlyFlag ? " on" : ""}`} onClick={() => setOnlyFlag(!onlyFlag)}>Needs attention</button>
       </div>
+      {lots && lots.length > 0 && <p className="small">Tip: swipe an item right if you used it, left if you threw it away.</p>}
       {lots === null && <p className="muted">Loading…</p>}
-      {lots && groups.length === 0 && <p className="muted">{onlyFlag ? "Nothing needs attention." : "Nothing in the pantry yet. Tap + to add a shop."}</p>}
+      {lots && groups.length === 0 && <p className="muted">{q ? "Nothing matches that search." : onlyFlag ? "Nothing needs attention." : "Nothing here yet. Tap + to add a shop."}</p>}
       {groups.map(([family, ls]) => {
         const n = ls.filter(needsAttention).length;
         return (
           <section key={family} className="stack-sm">
             <div className="group-h"><h2 className="serif">{family}</h2><span className="muted">{ls.length}</span>{n > 0 && <span className="red-t">{n} needs attention</span>}</div>
             {ls.map((l) => { const d = daysLabel(l); const flag = needsAttention(l); const fi = FAMILY_ICON[family]; return (
-              <button key={l.lot_id} className={`item ${flag ? "alert" : "card"}`} onClick={() => onSelect(l)}>
+              <SwipeRow key={l.lot_id} className={`item ${flag ? "alert" : "card"}`} onTap={() => onSelect(l)}
+                        onRight={() => onSwipe(l, "consume")} onLeft={() => onSwipe(l, "discard")}>
                 <div className={flag ? "halo" : ""} style={{ position: "relative" }}>
                   <Tile id={fi.id} bg={fi.tile} />
                   {flag && <span className="badge" aria-label="Needs attention">!</span>}
@@ -224,7 +311,7 @@ function Pantry({ lots, onlyFlag, setOnlyFlag, total, onSelect }: { lots: Lot[] 
                   {flag && <div className="red-t">Use soon</div>}
                 </div>
                 {d.n && <div className="days"><span className="serif" style={{ color: flag ? "var(--red)" : undefined }}>{d.n}</span><span className="muted">{d.u}</span></div>}
-              </button>); })}
+              </SwipeRow>); })}
           </section>
         );
       })}
@@ -296,32 +383,6 @@ function ManualAdd({ onClose, onDone }: { onClose: () => void; onDone: () => voi
         <button className="primary" disabled={busy}>{busy ? "Saving…" : "Add to pantry"}</button>
         <button type="button" className="ghost" onClick={onClose}>Cancel</button>
       </form>
-    </div>
-  );
-}
-
-function LotSheet({ lot, onClose, onDone }: { lot: Lot; onClose: () => void; onDone: () => void }) {
-  const [qty, setQty] = useState(String(Number(lot.qty_left)));
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const moveId = useRef(crypto.randomUUID());
-  async function run(reason: "consume" | "discard") {
-    setBusy(true); setErr("");
-    const { error } = await supabase.rpc("consume", { p_lot: lot.lot_id, p_qty: Number(qty), p_reason: reason, p_movement_id: moveId.current });
-    setBusy(false);
-    if (error) setErr(friendly(error.message)); else onDone();
-  }
-  return (
-    <div className="sheet-back" onClick={onClose}>
-      <div className="sheet" onClick={(e) => e.stopPropagation()}>
-        <h2 className="serif">{lot.name}</h2>
-        <p className="muted">{Number(lot.qty_left)} {unitLabel(lot.unit, Number(lot.qty_left))} left{lot.expires_on ? ` · date ${lot.expires_on}` : ""}</p>
-        <label>How much<input type="number" inputMode="decimal" min="0" step="any" value={qty} onChange={(e) => setQty(e.target.value)} /></label>
-        {err && <p className="err">{err}</p>}
-        <button className="primary" disabled={busy} onClick={() => run("consume")}>I used it</button>
-        <button className="ghost danger" disabled={busy} onClick={() => run("discard")}>I threw it away</button>
-        <button className="ghost" onClick={onClose}>Close</button>
-      </div>
     </div>
   );
 }

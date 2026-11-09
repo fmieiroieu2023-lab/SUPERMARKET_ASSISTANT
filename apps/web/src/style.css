@@ -127,3 +127,21 @@ select.amber { border: 2px solid #B8913A; background: #FBF1D9; }
 .trip strong { font-size: 18px; }
 .back { align-self: flex-start; padding: 0; }
 .receipt-img { width: 100%; border-radius: 16px; border: 1px solid var(--line); }
+
+/* ── Step 4b: pantry flow ── */
+.swipe { position: relative; border-radius: 24px; }
+.swipe > button { position: relative; touch-action: pan-y; transition: transform .15s ease-out; }
+.swipe-bg { position: absolute; inset: 0; border-radius: 24px; display: flex; justify-content: space-between; align-items: center; padding: 0 22px; font-weight: 700; color: #fff; }
+.swipe-bg.used { background: var(--green); } .swipe-bg.bin { background: var(--red); }
+.undo { position: absolute; left: 12px; right: 12px; bottom: calc(max(18px, env(safe-area-inset-bottom)) + 88px); z-index: 7; display: flex; align-items: center; gap: 12px;
+  background: #1D211C; color: #F5F1E6; border-radius: 18px; padding: 8px 8px 8px 18px; box-shadow: 0 10px 24px rgba(0,0,0,.3); min-height: 60px; }
+.undo-btn { min-height: 48px; padding: 0 20px; border-radius: 14px; border: 0; background: var(--brass); color: #1D211C; font-weight: 700; }
+.search { width: 100%; }
+.ask { display: grid; place-items: center; text-decoration: none; }
+a.ghost { min-height: 56px; border-radius: 28px; border: 2px solid var(--green); color: var(--green); font-weight: 700; }
+.hero-btn { background: none; border: 0; color: inherit; font: inherit; text-align: left; padding: 0; width: 100%; }
+.pad-in { padding: 16px; border-radius: 20px; display: flex; flex-direction: column; gap: 6px; }
+.pad-in .num { font-size: 32px; }
+.hist { padding: 8px 0; border-bottom: 1px solid var(--line); gap: 10px; }
+.mini.item-btn { text-align: left; }
+@media (prefers-reduced-motion: reduce) { .swipe > button { transition: none; } }
