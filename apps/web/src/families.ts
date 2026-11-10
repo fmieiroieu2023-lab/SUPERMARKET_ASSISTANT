@@ -22,14 +22,23 @@ export const familyOf = (categoryId: string): Family => MAP[categoryId] ?? "Othe
 
 // Illustrated tile per family until each ingredient has its own picture.
 export const FAMILY_ICON: Record<Family, { id: string; tile: string }> = {
-  "Ready meals & leftovers": { id: "pasta", tile: "#F3D9C9" },
+  "Ready meals & leftovers": { id: "pot", tile: "#F3D9C9" },
   "Meat & fish": { id: "chicken", tile: "#F2D3B3" },
   "Fruit & veg": { id: "spinach", tile: "#CBE4C7" },
   "Bread & bakery": { id: "bread", tile: "#EDD7B3" },
   "Dairy & eggs": { id: "milk", tile: "#CFDDEE" },
   "Dry goods & tins": { id: "pasta", tile: "#F1E2A4" },
-  Frozen: { id: "tuna", tile: "#CFDBE8" },
-  Drinks: { id: "oil", tile: "#DCE3AE" },
+  Frozen: { id: "snow", tile: "#D6E6F4" },
+  Drinks: { id: "bottle", tile: "#D3E4F0" },
   Household: { id: "soap", tile: "#BDE8E1" },
   Other: { id: "pasta", tile: "#E3D3BE" },
 };
+
+// A closer picture per category (the family tile is the fallback).
+const CAT_ICON: Record<string, { id: string; tile: string }> = {
+  fresh_fish: { id: "fish", tile: "#F6D5C8" }, eggs: { id: "egg", tile: "#F3E6CF" }, cheese: { id: "cheese", tile: "#F6E3A8" },
+  fresh_fruit: { id: "apple", tile: "#F5D0C8" }, coffee_tea: { id: "coffee", tile: "#E8D9C5" }, ready_meals: { id: "pot", tile: "#F3D9C9" },
+  frozen: { id: "snow", tile: "#D6E6F4" }, canned_jarred: { id: "tuna", tile: "#D5DFEA" }, oils_condiments: { id: "oil", tile: "#DCE3AE" },
+  beverages: { id: "bottle", tile: "#D3E4F0" }, alcohol: { id: "bottle", tile: "#E6DCC2" }, milk_uht: { id: "milk", tile: "#CFDDEE" },
+};
+export const iconFor = (categoryId: string) => CAT_ICON[categoryId] ?? FAMILY_ICON[familyOf(categoryId)];
