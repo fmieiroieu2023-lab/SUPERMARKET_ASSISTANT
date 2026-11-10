@@ -7,7 +7,7 @@ export const LARGE_MODEL = "claude-sonnet-5-5";  // retry once with this when th
 
 export type Refs = { categories: { id: string; name_es: string; is_food: boolean }[]; ingredients: { id: string; name_es: string }[] };
 export type Line = {
-  raw_text: string; name_guess: string; category_guess: string | null; ingredient_guess: string | null;
+  raw_text: string; name_guess: string; name_en: string; category_guess: string | null; ingredient_guess: string | null;
   printed_qty: number; printed_unit: "pack" | "g" | "ml"; line_total_cents: number; kind: "item" | "discount" | "refund";
 };
 export type Parsed = {
@@ -29,6 +29,7 @@ export const SCHEMA = {
         properties: {
           raw_text: { type: "string", description: "The line's product text exactly as printed" },
           name_guess: { type: "string", description: "Plain Spanish product name, e.g. 'Leche semidesnatada'" },
+          name_en: { type: "string", description: "The same product in plain English, e.g. 'Semi-skimmed milk'" },
           category_guess: { type: ["string", "null"], description: "One category id from the list, or null" },
           ingredient_guess: { type: ["string", "null"], description: "One ingredient id from the list, or null for non-food" },
           printed_qty: { type: "number", description: "Packs as printed (2 x LECHE -> 2), or grams for weighed lines" },
@@ -36,7 +37,7 @@ export const SCHEMA = {
           line_total_cents: { type: "integer", description: "Line total in cents; negative for discounts and refunds" },
           kind: { type: "string", enum: ["item", "discount", "refund"] },
         },
-        required: ["raw_text", "name_guess", "category_guess", "ingredient_guess", "printed_qty", "printed_unit", "line_total_cents", "kind"],
+        required: ["raw_text", "name_guess", "name_en", "category_guess", "ingredient_guess", "printed_qty", "printed_unit", "line_total_cents", "kind"],
       },
     },
     total_cents: { type: "integer", description: "The ticket's TOTAL in cents" },
@@ -56,6 +57,7 @@ Rules:
 - Multi-buy or promo discounts ("2ª ud. 70%", "DESCUENTO", "AHORRO") -> a separate line with kind "discount" and a negative amount. Returns -> kind "refund", negative.
 - If photos overlap, output each line once. Skip subtotal, VAT breakdown, payment, change and card lines.
 - Never output card numbers, loyalty ids or personal data.
+- name_guess is the product in plain Spanish; name_en is the same product in plain English (no brand unless it matters).
 - total_cents is the TOTAL the customer paid. The lines (with discounts) should add up to it; read again carefully if they don't.
 - purchased_at: the date and time printed on the ticket, as local time "YYYY-MM-DDTHH:MM"; null if not readable.
 - category_guess must be one id from this list, or null: ${cats}

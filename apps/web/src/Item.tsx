@@ -3,10 +3,11 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "./supabase";
 import { dayLabel, euro, friendly } from "./shared";
 import { addToList } from "./List";
+import { catName, prodName, useNames } from "./names";
 
 export type UndoFn = { text: string; run: () => Promise<void> };
 type LotFull = {
-  lot_id: string; name: string; category: string; ingredient: string | null; unit: string; location: string;
+  lot_id: string; name: string; category_id: string; category: string; ingredient: string | null; unit: string; location: string;
   initial_qty: number; qty_left: number; expires_on: string; effective_expires_on: string; days_left: number; state: string;
   expiry_kind: string; expiry_source: string; opened_on: string | null; frozen_on: string | null; can_open: boolean; can_freeze: boolean;
   product_id: string; on_list: boolean;
@@ -38,6 +39,7 @@ export function ItemPage({ lotId, onBack, onChanged, onOpenTrip }: {
   const [some, setSome] = useState<string | null>(null);
   const [date, setDate] = useState<string | null>(null);
   const alive = useRef(true);
+  useNames();
 
   async function load() {
     const { data, error } = await supabase.rpc("get_lot", { p_lot: lotId });
@@ -62,6 +64,7 @@ export function ItemPage({ lotId, onBack, onChanged, onOpenTrip }: {
   if (!lot) return (
     <div className="pad stack"><button className="link back" onClick={onBack}>‹ Pantry</button><p className={err ? "err" : "muted"}>{err || "Loading…"}</p></div>
   );
+  const nm = prodName(lot.product_id, lot.name);
   const q = Number(lot.qty_left);
   const flag = lot.state !== "ok" || lot.days_left <= 3;
   const when = lot.state === "finished" ? "Finished" : lot.state === "expired" ? "Past its date" : lot.state === "check" ? "Check it" :
@@ -71,8 +74,9 @@ export function ItemPage({ lotId, onBack, onChanged, onOpenTrip }: {
     <div className="pad stack">
       <button className="link back" onClick={onBack}>‹ Pantry</button>
       <div>
-        <h1 className="serif">{lot.name}</h1>
-        <p className="muted">{lot.category}{lot.ingredient ? ` · ${lot.ingredient}` : ""}</p>
+        <h1 className="serif">{nm.en}</h1>
+        {nm.es && nm.es !== nm.en && <p className="es big-es">{nm.es}</p>}
+        <p className="muted">{catName(lot.category_id).en}</p>
       </div>
       <div className={`card pad-in ${flag ? "alert" : ""}`}>
         <div className="between"><span className="serif num" style={{ color: flag ? "var(--red)" : undefined }}>{when}</span></div>
@@ -96,17 +100,17 @@ export function ItemPage({ lotId, onBack, onChanged, onOpenTrip }: {
               <label className="field">How much did you use ({unitWord(lot.unit, 2)})?
                 <input type="number" inputMode="decimal" min="0" step="any" value={some} onChange={(e) => setSome(e.target.value)} /></label>
               <div className="row">
-                <button className="primary" disabled={busy || !(Number(some) > 0)} onClick={() => void act(() => takeFromLot(lot.lot_id, Number(some), "consume", lot.name)).then(() => setSome(null))}>Save</button>
+                <button className="primary" disabled={busy || !(Number(some) > 0)} onClick={() => void act(() => takeFromLot(lot.lot_id, Number(some), "consume", nm.en)).then(() => setSome(null))}>Save</button>
                 <button className="ghost" onClick={() => setSome(null)}>Cancel</button>
               </div>
             </div>}
-        <button className="primary" disabled={busy} onClick={() => void act(() => takeFromLot(lot.lot_id, q, "consume", lot.name), true)}>All gone</button>
-        <button className="ghost danger" disabled={busy} onClick={() => void act(() => takeFromLot(lot.lot_id, q, "discard", lot.name), true)}>Threw it away</button>
+        <button className="primary" disabled={busy} onClick={() => void act(() => takeFromLot(lot.lot_id, q, "consume", nm.en), true)}>All gone</button>
+        <button className="ghost danger" disabled={busy} onClick={() => void act(() => takeFromLot(lot.lot_id, q, "discard", nm.en), true)}>Threw it away</button>
         <div className="row">
-          {lot.can_open && !lot.opened_on && !lot.frozen_on && <button className="ghost" disabled={busy} onClick={() => void mark("opened", `${lot.name}: opened`)}>Opened it</button>}
-          {lot.can_freeze && !lot.frozen_on && <button className="ghost" disabled={busy} onClick={() => void mark("frozen", `${lot.name}: moved to the freezer`)}>Froze it</button>}
-          {lot.frozen_on && <button className="ghost" disabled={busy} onClick={() => void mark("thawed", `${lot.name}: thawed`)}>Thawed it</button>}
-          {(lot.state === "check" || lot.state === "unconfirmed") && <button className="ghost" disabled={busy} onClick={() => void mark("still_have", `${lot.name}: still have it`)}>Still have it</button>}
+          {lot.can_open && !lot.opened_on && !lot.frozen_on && <button className="ghost" disabled={busy} onClick={() => void mark("opened", `${nm.en}: opened`)}>Opened it</button>}
+          {lot.can_freeze && !lot.frozen_on && <button className="ghost" disabled={busy} onClick={() => void mark("frozen", `${nm.en}: moved to the freezer`)}>Froze it</button>}
+          {lot.frozen_on && <button className="ghost" disabled={busy} onClick={() => void mark("thawed", `${nm.en}: thawed`)}>Thawed it</button>}
+          {(lot.state === "check" || lot.state === "unconfirmed") && <button className="ghost" disabled={busy} onClick={() => void mark("still_have", `${nm.en}: still have it`)}>Still have it</button>}
         </div>
       </div>}
 
@@ -124,7 +128,7 @@ export function ItemPage({ lotId, onBack, onChanged, onOpenTrip }: {
                 const { error } = await supabase.rpc("set_lot_expiry", { p_lot: lot.lot_id, p_expires_on: date });
                 if (error) throw new Error(error.message);
                 setDate(null);
-                return { text: `${lot.name}: date changed`, run: async () => { await supabase.rpc("set_lot_expiry", { p_lot: lot.lot_id, p_expires_on: before }); } };
+                return { text: `${nm.en}: date changed`, run: async () => { await supabase.rpc("set_lot_expiry", { p_lot: lot.lot_id, p_expires_on: before }); } };
               })}>Save date</button>
               <button className="ghost" onClick={() => setDate(null)}>Cancel</button>
             </div>

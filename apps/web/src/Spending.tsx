@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase";
 import { dayLabel, euro, friendly, monthLabel } from "./shared";
 import type { UndoFn } from "./Item";
+import { catName, Name, prodName, useNames } from "./names";
 
 type Trip = { purchase_id: string; chain: string; store_label: string | null; local_date: string; month: string;
   total_cents: number; verification: string; items: number; lots: number };
@@ -81,6 +82,7 @@ function TripPage({ id, onBack, onChanged }: { id: string; onBack: () => void; o
   const [adding, setAdding] = useState<{ name: string; cat: string; qty: string; unit: string; price: string; id: string } | null>(null);
   const [cats, setCats] = useState<Cat[]>([]);
   const [busy, setBusy] = useState(false);
+  useNames();
 
   async function load() {
     const { data, error } = await supabase.rpc("get_purchase", { p_purchase: id });
@@ -113,7 +115,7 @@ function TripPage({ id, onBack, onChanged }: { id: string; onBack: () => void; o
           {t.lines.map((l) => (
             <div key={l.line_no} className="line card">
               <div className="grow">
-                <strong>{l.name}</strong>
+                {l.kind === "adjustment" ? <strong>Unclassified</strong> : l.kind !== "item" ? <strong>{l.kind === "discount" ? "Discount" : "Refund"}</strong> : <Name n={prodName(l.product_id, l.name)} />}
                 <div className="muted small">
                   {l.kind === "item" ? (l.printed_unit === "g" ? `${Number(l.printed_qty)} g` : `${Number(l.printed_qty)} ×`) : l.kind === "adjustment" ? "difference to the ticket total" : l.kind}
                   {l.lot ? ` · in pantry: ${Number(l.lot.qty_left)} ${l.lot.unit === "unit" ? "items" : l.lot.unit}${l.lot.state === "finished" ? " (finished)" : ""}` : l.kind === "item" && !l.product_id ? " · spend only" : ""}
@@ -140,7 +142,7 @@ function TripPage({ id, onBack, onChanged }: { id: string; onBack: () => void; o
           : <div className="card pad-in stack-sm">
               <label className="field">What is it<input value={adding.name} onChange={(e) => setAdding({ ...adding, name: e.target.value })} placeholder="Perejil" /></label>
               <label className="field">Type<select value={adding.cat} onChange={(e) => setAdding({ ...adding, cat: e.target.value })}>
-                <option value="">Choose…</option>{cats.map((c) => <option key={c.id} value={c.id}>{c.name_es}</option>)}</select></label>
+                <option value="">Choose…</option>{[...cats].sort((a, b) => catName(a.id).en.localeCompare(catName(b.id).en)).map((c) => <option key={c.id} value={c.id}>{catName(c.id).en}</option>)}</select></label>
               <div className="row">
                 <label className="field">How much<input inputMode="decimal" value={adding.qty} onChange={(e) => setAdding({ ...adding, qty: e.target.value })} /></label>
                 <label className="field">Unit<select value={adding.unit} onChange={(e) => setAdding({ ...adding, unit: e.target.value })}><option value="unit">items</option><option value="g">grams</option><option value="ml">ml</option></select></label>
@@ -179,6 +181,7 @@ type Budget = { month: string; budget_cents: number | null; spent_cents: number;
   projection: { projected_cents?: number; next_shop?: string; alert?: boolean; needs?: string } | null };
 
 function BudgetView() {
+  useNames();
   const [b, setB] = useState<Budget | null>(null);
   const [err, setErr] = useState("");
   const [edit, setEdit] = useState<string | null>(null);
@@ -241,7 +244,7 @@ function BudgetView() {
           <div className="card pad-in stack-sm">
             {b.by_category.slice(0, 8).map((c) => (
               <div key={c.category_id} className="bar-row">
-                <span className="bar-label">{c.name}</span>
+                <span className="bar-label">{catName(c.category_id).en}</span>
                 <div className="bar-track"><div className={`bar-fill ${c.is_food === false ? "nonfood" : ""}`} style={{ width: `${Math.max(2, (Math.abs(c.cents) / maxCat) * 100)}%` }} /></div>
                 <span className="amt">{euro(c.cents)}</span>
               </div>

@@ -9,9 +9,10 @@ import { Spending } from "./Spending";
 import { dayLabel, euro, friendly } from "./shared";
 import { ItemPage, UndoBar, takeFromLot, type UndoFn } from "./Item";
 import { ListTab } from "./List";
+import { catName, loadNames, Name, useNames } from "./names";
 
 type Lot = {
-  lot_id: string; name: string; category: string; location: string; qty_left: number; unit: string;
+  lot_id: string; name: string; name_en?: string | null; product_id?: string; category: string; location: string; qty_left: number; unit: string;
   packs_left: number | null; expires_on: string | null; days_left: number | null; state: string;
   expiry_kind: string; expiry_source: string;
 };
@@ -19,6 +20,7 @@ type Overview = { today: string; expired: number; expiring_3_days: number; to_ch
 type Tab = "home" | "pantry" | "list" | "spending";
 
 // A lot needs attention when it is past its date, needs a check, or ends within 3 days (same window as get_overview).
+const lotName = (l: Lot) => ({ en: l.name_en || l.name, es: l.name });
 const needsAttention = (l: Lot) => l.state !== "ok" || (l.expiry_kind !== "none" && l.days_left !== null && l.days_left <= 3);
 
 function daysLabel(l: Lot): { n: string; u: string } {
@@ -73,6 +75,7 @@ function Login() {
 }
 
 function Shell() {
+  useNames();
   const [tab, setTab] = useState<Tab>("home");
   const [onlyFlag, setOnlyFlag] = useState(false);
   const [lots, setLots] = useState<Lot[] | null>(null);
@@ -90,6 +93,7 @@ function Shell() {
 
   const load = useCallback(async () => {
     // One call (app_snapshot) instead of three: faster, and the numbers and the list always agree.
+    void loadNames(true);   // product names change when receipts add products
     const { data, error } = await supabase.rpc("app_snapshot");
     if (error) return setErr(friendly(error.message));
     setErr("");
@@ -119,7 +123,7 @@ function Shell() {
   const attentionCount = overview ? overview.expired + overview.expiring_3_days + overview.to_check : attention.length;
   const changed = (u: UndoFn | null) => { if (u) setUndo(u); void load(); };
   const swipe = (l: Lot, reason: "consume" | "discard") => {
-    void takeFromLot(l.lot_id, Number(l.qty_left), reason, l.name).then(changed).catch((e) => setErr(friendly(String(e))));
+    void takeFromLot(l.lot_id, Number(l.qty_left), reason, lotName(l).en).then(changed).catch((e) => setErr(friendly(String(e))));
   };
   const openTripFrom = (id: string) => { setItemId(null); setTab("spending"); setOpenTrip(id); };
 
@@ -236,7 +240,7 @@ function Home({ lots, attention, count, lastTrip, month, onBudget, onAttention, 
             <div className="stage"><div className="tilt"><Tile id={fi.id} bg={fi.tile} size={112} /></div></div>
             <div>
               <div className="big"><span className="serif">{daysLabel(first).n || "–"}</span><span>{daysLabel(first).u}</span></div>
-              <strong className="hero-name">{first.name}</strong>
+              <strong className="hero-name">{lotName(first).en}</strong>
               <div className="hero-sub">{qtyLabel(first)}</div>
             </div>
           </button>
@@ -261,7 +265,7 @@ function Home({ lots, attention, count, lastTrip, month, onBudget, onAttention, 
             {soon.map((l) => { const ic = iconFor(l.category); const d = daysLabel(l); const flag = needsAttention(l); return (
               <button key={l.lot_id} className={`mini item-btn ${flag ? "alert" : "card"}`} onClick={() => onItem(l.lot_id)}>
                 <Tile id={ic.id} bg={ic.tile} size={68} />
-                <strong>{l.name}</strong>
+                <strong>{lotName(l).en}</strong>
                 <div className="mini-n"><span className="serif" style={{ color: flag ? "var(--red)" : undefined }}>{d.n}</span><span className="muted">{d.u}</span></div>
               </button>); })}
           </div>
@@ -364,7 +368,7 @@ function Pantry({ lots, onlyFlag, setOnlyFlag, total, place, setPlace, onSelect,
     for (const l of lots ?? []) {
       if (onlyFlag && !needsAttention(l)) continue;
       if (place !== "all" && l.location !== place) continue;
-      const name = l.name.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+      const name = (l.name + " " + (l.name_en ?? "")).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
       if (words.length && !words.every((w) => name.includes(w))) continue;
       const f = familyOf(l.category); by.set(f, [...(by.get(f) ?? []), l]);
     }
@@ -395,7 +399,7 @@ function Pantry({ lots, onlyFlag, setOnlyFlag, total, place, setPlace, onSelect,
                   {flag && <span className="badge" aria-label="Needs attention">!</span>}
                 </div>
                 <div className="grow">
-                  <strong>{l.name}</strong>
+                  <Name n={lotName(l)} />
                   <div className="muted">{qtyLabel(l)}</div>
                   {flag && <div className="red-t">Use soon</div>}
                 </div>
@@ -460,7 +464,7 @@ function ManualAdd({ onClose, onDone }: { onClose: () => void; onDone: () => voi
         <h2 className="serif">Add an item</h2>
         <label>What is it<input value={name} onChange={(e) => setName(e.target.value)} required placeholder="Chicken breast" /></label>
         <label>Type<select value={cat} onChange={(e) => setCat(e.target.value)} required>
-          <option value="">Choose…</option>{cats.map((c) => <option key={c.id} value={c.id}>{c.name_es}</option>)}
+          <option value="">Choose…</option>{[...cats].sort((a, b) => catName(a.id).en.localeCompare(catName(b.id).en)).map((c) => <option key={c.id} value={c.id}>{catName(c.id).en}</option>)}
         </select></label>
         <div className="row">
           <label>How much<input type="number" inputMode="decimal" min="0" step="any" value={qty} onChange={(e) => setQty(e.target.value)} required /></label>

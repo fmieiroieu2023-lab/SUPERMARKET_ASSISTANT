@@ -206,3 +206,17 @@ a.ghost { min-height: 56px; border-radius: 28px; border: 2px solid var(--green);
 .hist-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; height: 100%; min-width: 0; }
 .hist-bar { width: 70%; max-width: 34px; border-radius: 8px 8px 3px 3px; background: linear-gradient(180deg, var(--green2), var(--green)); }
 @media (prefers-reduced-motion: reduce) { .meter-fill { transition: none; } }
+
+/* ── English first, Spanish small ── */
+.es { display: block; font-size: 13px; color: var(--muted); font-style: italic; line-height: 1.25; }
+.big-es { font-size: 16px; margin: 2px 0 0; }
+.hero .es { color: #C9CDBD; }
+/* list quantities */
+.list-row { flex-wrap: wrap; }
+.qty-chip { min-height: 40px; min-width: 52px; padding: 0 10px; border-radius: 12px; border: 2px dashed var(--line); background: #fff; color: var(--muted); font-weight: 700; font-size: 14px; }
+.qty-chip.on { border: 2px solid var(--green); color: var(--green); }
+.qty-edit { flex-basis: 100%; display: flex; flex-direction: column; gap: 10px; padding: 8px 2px 4px; border-top: 1px solid var(--line); }
+.stepper { display: flex; align-items: center; gap: 8px; }
+.stepper button { width: 52px; height: 52px; border-radius: 16px; border: 2px solid var(--green); background: #fff; color: var(--green); font-size: 26px; font-weight: 700; }
+.stepper input { width: 90px; text-align: center; font-size: 20px; font-weight: 700; }
+.small-chip { min-height: 40px; padding: 0 14px; }

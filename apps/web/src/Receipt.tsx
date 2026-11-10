@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabase";
 import { chainName, CHAINS, dayLabel, euro, friendly, householdId, invokeError } from "./shared";
+import { allIngredients, catName, prodName, useNames } from "./names";
 
 type RLine = {
-  line_no: number; kind: string; raw_text: string | null; name_guess: string; category_id: string | null; is_food: boolean;
+  line_no: number; kind: string; raw_text: string | null; name_guess: string; name_en: string | null; category_id: string | null; is_food: boolean;
   printed_qty: number; printed_unit: string; line_total_cents: number; product_id: string | null; product_name: string | null;
   match: "matched" | "suggested" | "new" | "spend" | "none"; suggestion: { product_id: string; name: string } | null;
   ingredient_id: string | null; ingredient_name: string | null;
@@ -16,7 +17,7 @@ type Review = {
   duplicate: { verdict: string; other_purchase_id: string | null; evidence: string | null; notice: string | null };
   lines: RLine[];
 };
-type Edit = { action: "match" | "new" | "spend"; product_id?: string; name?: string; category_id?: string | null; ingredient_id?: string | null; unit?: string; pack_size?: number | null };
+type Edit = { action: "match" | "new" | "spend"; product_id?: string; name?: string; name_en?: string; category_id?: string | null; ingredient_id?: string | null; unit?: string; pack_size?: number | null };
 type Cat = { id: string; name_es: string; is_food: boolean };
 type Ing = { id: string; name_es: string };
 type DateRow = { lot_id: string; name: string; expires_on: string; expiry_kind: string };
@@ -42,7 +43,7 @@ function defaultEdit(l: RLine, ids: Map<number, string>): Edit | null {
   if (l.match === "suggested" && l.suggestion) return { action: "match", product_id: l.suggestion.product_id };
   if (l.match === "spend" || !l.is_food) return { action: "spend", category_id: l.category_id };
   if (!ids.has(l.line_no)) ids.set(l.line_no, crypto.randomUUID());
-  return { action: "new", product_id: ids.get(l.line_no), name: l.name_guess, category_id: l.category_id,
+  return { action: "new", product_id: ids.get(l.line_no), name: l.name_guess, name_en: l.name_en ?? l.name_guess, category_id: l.category_id,
            ingredient_id: l.ingredient_id, unit: l.printed_unit === "pack" ? "unit" : l.printed_unit };
 }
 
@@ -65,6 +66,7 @@ export function ReceiptFlow({ files, resumeId, onClose, onSaved }: {
   const newIds = useRef(new Map<number, string>());
   const started = useRef(false);
   const savedId = useRef<string | null>(null);
+  useNames();
 
   useEffect(() => {
     void supabase.from("categories").select("id,name_es,is_food").order("name_es").then(({ data }) => setCats((data as Cat[]) ?? []));
@@ -221,7 +223,7 @@ export function ReceiptFlow({ files, resumeId, onClose, onSaved }: {
           )}
           {showMatched && matched.map((l) => { const sp = edits[l.line_no]?.action === "spend"; return (
             <div key={l.line_no} className="line card">
-              <div className="grow"><strong>{l.product_name}</strong><div className="muted">{l.raw_text}{sp ? " · spend only" : ""}</div></div>
+              <div className="grow"><strong>{prodName(l.product_id, l.product_name ?? "").en}</strong><div className="muted">{l.raw_text}{sp ? " · spend only" : ""}</div></div>
               <span className="amt">{euro(l.line_total_cents)}</span>
               <button className="chip" onClick={() => setEdit(l.line_no, sp ? null : { action: "spend", category_id: l.category_id })}>{sp ? "Undo" : "Spend only"}</button>
             </div>); })}
@@ -267,7 +269,7 @@ function LineCard({ l, e, cats, foodCats, ings, newId, onChange }: {
   if (l.kind !== "item") return (
     <div className="line card"><div className="grow"><strong>{l.kind === "discount" ? "Discount" : l.kind === "refund" ? "Refund" : "Adjustment"}</strong><div className="muted">{l.raw_text}</div></div><span className="amt">{euro(l.line_total_cents)}</span></div>
   );
-  const asNew = (): Edit => ({ action: "new", product_id: newId(), name: l.name_guess, category_id: l.category_id && cats.find((c) => c.id === l.category_id)?.is_food ? l.category_id : null,
+  const asNew = (): Edit => ({ action: "new", product_id: newId(), name: l.name_guess, name_en: l.name_en ?? l.name_guess, category_id: l.category_id && cats.find((c) => c.id === l.category_id)?.is_food ? l.category_id : null,
                                ingredient_id: l.ingredient_id, unit: l.printed_unit === "pack" ? "unit" : l.printed_unit });
   return (
     <div className="line card stack-sm">
@@ -282,10 +284,11 @@ function LineCard({ l, e, cats, foodCats, ings, newId, onChange }: {
 
       {e?.action === "new" && (
         <div className="stack-sm">
-          <label className="field">Name<input value={e.name ?? ""} onChange={(x) => onChange({ ...e, name: x.target.value })} /></label>
+          <label className="field">Name<input value={e.name_en ?? ""} onChange={(x) => onChange({ ...e, name_en: x.target.value })} /></label>
+          {e.name && <p className="es">On the receipt: {e.name}</p>}
           <div className="row">
             <label className="field">Type<select value={e.category_id ?? ""} onChange={(x) => onChange({ ...e, category_id: x.target.value })}>
-              <option value="">Choose…</option>{foodCats.map((c) => <option key={c.id} value={c.id}>{c.name_es}</option>)}
+              <option value="">Choose…</option>{[...foodCats].sort((a, b) => catName(a.id).en.localeCompare(catName(b.id).en)).map((c) => <option key={c.id} value={c.id}>{catName(c.id).en}</option>)}
             </select></label>
             <label className="field">Counted as<select value={e.unit ?? "unit"} onChange={(x) => onChange({ ...e, unit: x.target.value })}>
               <option value="unit">items</option><option value="g">grams</option><option value="ml">ml</option>
@@ -298,7 +301,8 @@ function LineCard({ l, e, cats, foodCats, ings, newId, onChange }: {
           )}
           <label className="field">Ingredient <span className="muted small">(links recipes and the shopping list)</span>
             <select value={e.ingredient_id ?? ""} onChange={(x) => onChange({ ...e, ingredient_id: x.target.value || null })} className={e.ingredient_id ? "" : "amber"}>
-              <option value="">Set ingredient…</option>{ings.map((i) => <option key={i.id} value={i.id}>{i.name_es}</option>)}
+              <option value="">Set ingredient…</option>{(allIngredients().length ? allIngredients().map(([id, n]) => ({ id, en: n.en })) : ings.map((i) => ({ id: i.id, en: i.name_es })))
+                .sort((a, b) => a.en.localeCompare(b.en)).map((i) => <option key={i.id} value={i.id}>{i.en}</option>)}
             </select></label>
         </div>
       )}
