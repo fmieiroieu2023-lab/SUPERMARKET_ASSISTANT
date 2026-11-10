@@ -8,6 +8,7 @@ import { ReceiptFlow } from "./Receipt";
 import { Spending } from "./Spending";
 import { dayLabel, euro, friendly } from "./shared";
 import { ItemPage, UndoBar, takeFromLot, type UndoFn } from "./Item";
+import { ListTab } from "./List";
 
 type Lot = {
   lot_id: string; name: string; category: string; location: string; qty_left: number; unit: string;
@@ -85,7 +86,7 @@ function Shell() {
   const [lastTrip, setLastTrip] = useState<LastTrip | null>(null);
   const [undo, setUndo] = useState<UndoFn | null>(null);
   const [place, setPlace] = useState("all");
-  const [monthCents, setMonthCents] = useState<number | null>(null);
+  const [month, setMonth] = useState<{ spent_cents: number; budget_cents: number | null; alert: string | null } | null>(null);
 
   const load = useCallback(async () => {
     // One call (app_snapshot) instead of three: faster, and the numbers and the list always agree.
@@ -99,9 +100,8 @@ function Shell() {
     const p = await supabase.rpc("list_purchases", { p_limit: 60 });
     const pd = p.error ? null : (p.data as { drafts: { purchase_id: string; created_at: string }[]; trips: (LastTrip & { month: string })[] });
     setDrafts(pd?.drafts ?? []); setLastTrip(pd?.trips[0] ?? null);
-    // This month's shops (display only; the budget step brings the real budget numbers from SQL).
-    const ym = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Madrid" }).slice(0, 7);
-    setMonthCents(pd ? pd.trips.filter((t) => t.month === ym).reduce((a, t) => a + t.total_cents, 0) : null);
+    const b = await supabase.rpc("budget_status");
+    setMonth(b.error ? null : (b.data as { spent_cents: number; budget_cents: number | null; alert: string | null }));
   }, []);
   useEffect(() => {
     void load();
@@ -137,12 +137,12 @@ function Shell() {
               </button>
             </div>
           )}
-          {tab === "home" && <Home lots={lots} attention={attention} count={attentionCount} lastTrip={lastTrip} monthCents={monthCents}
+          {tab === "home" && <Home lots={lots} attention={attention} count={attentionCount} lastTrip={lastTrip} month={month} onBudget={() => { go("spending"); setOpenTrip(null); }}
             onAttention={() => go("pantry", true)} onPantry={(pl = "all") => { setPlace(pl); go("pantry"); }} onItem={setItemId} onTrip={openTripFrom}
             onAdd={() => setAddOpen(true)} />}
           {tab === "pantry" && <Pantry lots={lots} onlyFlag={onlyFlag} setOnlyFlag={setOnlyFlag} total={overview?.in_stock ?? 0}
             place={place} setPlace={setPlace} onSelect={(l) => setItemId(l.lot_id)} onSwipe={swipe} />}
-          {tab === "list" && <Soon title="Shopping list" note="Arrives with the shopping-list step." />}
+          {tab === "list" && <ListTab onChanged={changed} />}
           {tab === "spending" && <Spending openTrip={openTrip} onOpenTrip={setOpenTrip} onResume={(id) => setReceipt({ resumeId: id })} onChanged={changed} />}
         </>}
       </main>
@@ -174,9 +174,6 @@ function TabBtn({ label, on, onClick, d }: { label: string; on: boolean; onClick
   );
 }
 
-function Soon({ title, note }: { title: string; note: string }) {
-  return <div className="pad"><h1 className="serif">{title}</h1><p className="muted">{note}</p></div>;
-}
 
 // "Ask Claude" (D17): opens Claude with a question ready; Claude answers with the Supermarket connector.
 const ask = (q: string) => "https://claude.ai/new?q=" + encodeURIComponent(`Using my Supermarket connector: ${q}`);
@@ -195,8 +192,9 @@ function greeting() {
   return h < 6 ? "Good night" : h < 13 ? "Good morning" : h < 20 ? "Good afternoon" : "Good evening";
 }
 
-function Home({ lots, attention, count, lastTrip, monthCents, onAttention, onPantry, onItem, onTrip, onAdd }: {
-  lots: Lot[] | null; attention: Lot[]; count: number; lastTrip: LastTrip | null; monthCents: number | null;
+function Home({ lots, attention, count, lastTrip, month, onBudget, onAttention, onPantry, onItem, onTrip, onAdd }: {
+  lots: Lot[] | null; attention: Lot[]; count: number; lastTrip: LastTrip | null;
+  month: { spent_cents: number; budget_cents: number | null; alert: string | null } | null; onBudget: () => void;
   onAttention: () => void; onPantry: (place?: string) => void; onItem: (id: string) => void; onTrip: (id: string) => void; onAdd: () => void;
 }) {
   const inStock = (lots ?? []).filter((l) => l.state !== "finished");
@@ -250,7 +248,9 @@ function Home({ lots, attention, count, lastTrip, monthCents, onAttention, onPan
         <div className="stats">
           <button className="stat card item-btn" onClick={() => onPantry()}><Tile id="cupboard" bg="#EEDCC4" size={40} /><span className="serif stat-n">{inStock.length}</span><span className="muted">in stock</span></button>
           <button className={`stat item-btn ${count ? "alert" : "card"}`} onClick={onAttention}><Tile id="apple" bg="#F5D0C8" size={40} /><span className="serif stat-n" style={{ color: count ? "var(--red)" : undefined }}>{count}</span><span className="muted">use soon</span></button>
-          <div className="stat card"><Tile id="receipt" bg="#ECE6D8" size={40} /><span className="serif stat-n">{monthCents == null ? "–" : `€${Math.round(monthCents / 100)}`}</span><span className="muted">this month</span></div>
+          <button className={`stat item-btn ${month?.alert ? "alert" : "card"}`} onClick={onBudget}><Tile id="receipt" bg="#ECE6D8" size={40} />
+            <span className="serif stat-n">{month == null ? "–" : `€${Math.round(month.spent_cents / 100)}`}</span>
+            <span className="muted">{month?.budget_cents ? `of €${Math.round(month.budget_cents / 100)}` : "this month"}</span></button>
         </div>
       )}
 

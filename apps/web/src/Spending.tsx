@@ -45,7 +45,7 @@ export function Spending({ openTrip, onOpenTrip, onResume, onChanged }: {
         <button role="tab" aria-selected={view === "budget"} className={view === "budget" ? "on" : ""} onClick={() => setView("budget")}>Budget</button>
       </div>
       {err && <p className="err">{err} <button className="link" onClick={() => void load()}>Retry</button></p>}
-      {view === "budget" && <p className="muted">Your monthly budget, alerts at 80% and 100%, and where the money goes arrive with the budget step.</p>}
+      {view === "budget" && <BudgetView />}
       {view === "trips" && <>
         {drafts.map((d) => (
           <button key={d.purchase_id} className="banner warn-b item-btn" onClick={() => onResume(d.purchase_id)}>
@@ -168,6 +168,109 @@ function TripPage({ id, onBack, onChanged }: { id: string; onBack: () => void; o
         })}>Delete this trip</button>
       </>}
       {err && <p className="err" role="alert">{err}</p>}
+    </div>
+  );
+}
+
+type Budget = { month: string; budget_cents: number | null; spent_cents: number; left_cents: number | null; pct: number | null;
+  alert: "near" | "over" | null; days_left: number; trips: number; food_cents: number; nonfood_cents: number; waste_cents: number;
+  by_category: { category_id: string; name: string; is_food: boolean | null; cents: number }[];
+  by_chain: { chain: string; cents: number; trips: number }[]; history: { month: string; cents: number }[];
+  projection: { projected_cents?: number; next_shop?: string; alert?: boolean; needs?: string } | null };
+
+function BudgetView() {
+  const [b, setB] = useState<Budget | null>(null);
+  const [err, setErr] = useState("");
+  const [edit, setEdit] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  async function load() {
+    const { data, error } = await supabase.rpc("budget_status");
+    if (error) setErr(friendly(error.message)); else { setErr(""); setB(data as Budget); }
+  }
+  useEffect(() => { void load(); }, []);
+  async function save() {
+    const cents = Math.round(Number((edit ?? "").replace(",", ".")) * 100);
+    if (!(cents > 0)) return setErr("Type an amount, for example 250.");
+    setBusy(true);
+    const { data, error } = await supabase.rpc("set_budget", { p_amount_cents: cents });
+    setBusy(false);
+    if (error) setErr(friendly(error.message)); else { setB(data as Budget); setEdit(null); setErr(""); }
+  }
+  if (!b) return <p className={err ? "err" : "muted"}>{err || "Loading…"}</p>;
+  const pct = Math.min(100, b.pct ?? 0);
+  const maxHist = Math.max(1, ...b.history.map((h) => h.cents));
+  const maxCat = Math.max(1, ...b.by_category.map((c) => Math.abs(c.cents)));
+  const monthName = new Date(`${b.month}-15T12:00:00`).toLocaleDateString("en-GB", { month: "long" });
+
+  return (
+    <div className="stack">
+      {(b.budget_cents == null || edit !== null) ? (
+        <div className="card pad-in stack-sm">
+          <strong className="serif">{b.budget_cents == null ? "Set a monthly budget" : "Change your monthly budget"}</strong>
+          <p className="muted small">For groceries and household shopping. You'll get a warning at 80% and at 100%.</p>
+          <div className="row">
+            <label className="total-in">€<input inputMode="decimal" aria-label="Monthly budget" placeholder="250" value={edit ?? ""} onChange={(e) => setEdit(e.target.value)} /></label>
+            <button className="primary" disabled={busy} onClick={() => void save()}>Save</button>
+          </div>
+          {b.budget_cents != null && <button className="link" style={{ alignSelf: "flex-start" }} onClick={() => setEdit(null)}>Cancel</button>}
+        </div>
+      ) : (
+        <div className={`card pad-in budget-card ${b.alert ? "alert" : ""}`}>
+          <div className="between"><span className="muted">{monthName}</span><button className="link" onClick={() => setEdit(String((b.budget_cents ?? 0) / 100))}>Edit</button></div>
+          <div className="budget-big"><span className="serif">{euro(b.spent_cents)}</span><span className="muted"> of {euro(b.budget_cents)}</span></div>
+          <div className="meter" role="img" aria-label={`${b.pct}% of the budget used`}>
+            <div className={`meter-fill ${b.alert ?? ""}`} style={{ width: `${pct}%` }} />
+            <div className="meter-mark" style={{ left: "80%" }} />
+          </div>
+          <div className="between small-row">
+            <span>{b.left_cents != null && b.left_cents >= 0 ? `${euro(b.left_cents)} left` : `${euro(Math.abs(b.left_cents ?? 0))} over`}</span>
+            <span className="muted">{b.days_left} day{b.days_left === 1 ? "" : "s"} to go · {b.trips} trip{b.trips === 1 ? "" : "s"}</span>
+          </div>
+          {b.alert === "near" && <p className="banner warn-b">You've used {b.pct}% of this month's budget.</p>}
+          {b.alert === "over" && <p className="banner alert-b">You're over this month's budget.</p>}
+          {b.projection?.projected_cents != null && (
+            <p className={`small ${b.projection.alert ? "red-t" : ""}`}>At your usual pace this month ends near {euro(b.projection.projected_cents)}.{b.projection.alert ? " That's over budget." : ""}</p>
+          )}
+          {b.projection?.needs && <p className="small">Forecast: {b.projection.needs.toLowerCase()} of history first.</p>}
+        </div>
+      )}
+
+      {b.by_category.length > 0 && (
+        <section className="stack-sm">
+          <h2 className="serif">Where it went</h2>
+          <div className="card pad-in stack-sm">
+            {b.by_category.slice(0, 8).map((c) => (
+              <div key={c.category_id} className="bar-row">
+                <span className="bar-label">{c.name}</span>
+                <div className="bar-track"><div className={`bar-fill ${c.is_food === false ? "nonfood" : ""}`} style={{ width: `${Math.max(2, (Math.abs(c.cents) / maxCat) * 100)}%` }} /></div>
+                <span className="amt">{euro(c.cents)}</span>
+              </div>
+            ))}
+            <div className="between small-row"><span>Food {euro(b.food_cents)}</span><span>Household {euro(b.nonfood_cents)}</span></div>
+          </div>
+        </section>
+      )}
+
+      <div className="stats">
+        <div className="stat card"><span className="muted">Thrown away</span><span className="serif stat-n">{euro(b.waste_cents)}</span></div>
+        {b.by_chain.slice(0, 2).map((c) => (
+          <div key={c.chain} className="stat card"><span className="muted">{c.chain}</span><span className="serif stat-n">{euro(c.cents)}</span></div>
+        ))}
+      </div>
+
+      <section className="stack-sm">
+        <h2 className="serif">Last 6 months</h2>
+        <div className="card pad-in hist-chart" role="img" aria-label="Spending in the last 6 months">
+          {b.history.map((h) => (
+            <div key={h.month} className="hist-col">
+              <span className="muted small">{h.cents ? `€${Math.round(h.cents / 100)}` : ""}</span>
+              <div className="hist-bar" style={{ height: `${Math.max(3, (h.cents / maxHist) * 100)}%` }} />
+              <span className="small">{new Date(`${h.month}-15T12:00:00`).toLocaleDateString("en-GB", { month: "short" })}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+      {err && <p className="err">{err}</p>}
     </div>
   );
 }

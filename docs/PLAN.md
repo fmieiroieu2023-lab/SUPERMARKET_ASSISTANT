@@ -70,3 +70,10 @@ See D8-D14 in DECISIONS.md. Screens to build in step 3: Home, Pantry, Add flow (
 - Step 4b built the same night (migration `20261110100000_pantry_flow.sql`, test 05): item page, Undo bar 6 s, swipe, search + place chips, Ready meals & leftovers group, Home with last shop + Ask Claude. 158 SQL checks pass locally.
 - Not done in step 4 yet: `retention` job (needs the scheduler from step 6), "track as separate weighed product" fix, merge flows beyond the confirm question, per-user category expiry override.
 
+## Steps 7 + 8, first slice (2026-11-10, asked for by Francisco before steps 5-6)
+
+- Migration `20261110120000_list_budget.sql`, test 07 (184 SQL checks pass locally; applied to dev).
+- Shopping list: `get_shopping_list` (open items, basket = ticked in the last 3 days and not logged yet, "You ran out of" suggestions, estimate from last prices vs budget left), `update_shopping_list` (add / tick / untick / remove; client ids; same ingredient is merged). List tab: add with autocomplete (your products + all ingredients), tick off with Undo, item page "Add to shopping list".
+- Budget: `set_budget`, `budget_status` (spent, left, 80 % / 100 % alerts, by category, by shop, food vs household, waste €, last 6 months, §6.7 projection from shopping days; the second worked check gives €213 on 15 Nov as specified). Budget view in Spending; Home tile shows "€X of €Y".
+- Still to do in step 7: push/email alerts (step 6), "which store is cheaper", price history. Step 8: the automatic rules in `refresh_shopping_list` (below par, runs out soon, usual purchase), staples screen, "Done shopping → stock them now?".
+

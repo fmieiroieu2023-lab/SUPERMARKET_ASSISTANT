@@ -2,12 +2,14 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "./supabase";
 import { dayLabel, euro, friendly } from "./shared";
+import { addToList } from "./List";
 
 export type UndoFn = { text: string; run: () => Promise<void> };
 type LotFull = {
   lot_id: string; name: string; category: string; ingredient: string | null; unit: string; location: string;
   initial_qty: number; qty_left: number; expires_on: string; effective_expires_on: string; days_left: number; state: string;
   expiry_kind: string; expiry_source: string; opened_on: string | null; frozen_on: string | null; can_open: boolean; can_freeze: boolean;
+  product_id: string; on_list: boolean;
   bought: { purchase_id: string; chain: string; local_date: string; line_total_cents: number | null } | null;
   history: { id: string; delta: number; reason: string; at: string; undone: boolean; is_undo: boolean }[];
 };
@@ -107,6 +109,10 @@ export function ItemPage({ lotId, onBack, onChanged, onOpenTrip }: {
           {(lot.state === "check" || lot.state === "unconfirmed") && <button className="ghost" disabled={busy} onClick={() => void mark("still_have", `${lot.name}: still have it`)}>Still have it</button>}
         </div>
       </div>}
+
+      {lot.on_list
+        ? <p className="small">✓ On your shopping list</p>
+        : <button className="ghost" disabled={busy} onClick={() => void act(async () => { await addToList({ product_id: lot.product_id }); return null; })}>Add to shopping list</button>}
 
       {date === null
         ? <button className="link" style={{ alignSelf: "flex-start" }} onClick={() => setDate(lot.expires_on)}>Change date</button>
