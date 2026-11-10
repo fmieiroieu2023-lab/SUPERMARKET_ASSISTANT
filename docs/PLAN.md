@@ -78,3 +78,10 @@ See D8-D14 in DECISIONS.md. Screens to build in step 3: Home, Pantry, Add flow (
 - Still to do in step 7: push/email alerts (step 6), "which store is cheaper", price history. Step 8: the automatic rules in `refresh_shopping_list` (below par, runs out soon, usual purchase), staples screen, "Done shopping → stock them now?".
 - 2026-11-10 (later): English names with Spanish underneath (D18) and list quantities. Migration `20261110130000_names_quantities.sql` (categories/products `name_en`, `list_pantry` + `receipt_review` carry it, `finish_receipt` saves it, `set_list_quantity`), test 08; 194 checks pass. parse-receipt now also returns `name_en`.
 
+## Step 6 notes (2026-11-10)
+- Migration `20261110140000_alerts.sql`, test 09 (214 checks pass locally; applied to dev). The digest rule is SQL (`_digest`, used by `my_digest` for the app and `cron_digest` for the job), not a TS function as the reference says, because rules live in Postgres (CLAUDE.md). Groups: today, next days (lead days per user), check, expired (first 3 days), still have these, budget alerts.
+- Edge Function `daily-digest` (deployed): x-cron-secret -> everyone due this hour (push + optional Resend email, once a day, dead devices dropped, then `cron_retention`); user token -> test notification to your own devices.
+- `apps/scheduler`: Cloudflare Worker, hourly at :05, retry once, watchdog email. Francisco deploys it from his Mac (`pnpm --filter scheduler deploy`, then `pnpm --filter scheduler secrets`).
+- App: Settings page (bell on Home): turn on notifications for this device, test, time, email, warning days, sign out. Service worker shows the notification and sets the icon number; the app sets the number too. "Still have these?" cards on Home. Retention keeps photos (D19).
+- Waiting on Francisco: the 3 Edge Function secrets (VAPID public/private, CRON_SECRET), the Worker deploy, and (optional) RESEND_API_KEY for email. Email-code login still needs Resend SMTP in Supabase Auth settings.
+

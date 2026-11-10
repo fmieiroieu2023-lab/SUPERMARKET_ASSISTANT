@@ -1,5 +1,10 @@
 {
   "name": "scheduler",
   "version": "0.0.0",
-  "private": true
+  "private": true,
+  "description": "Hourly Cloudflare Worker that calls the daily-digest Edge Function (and keeps the Supabase project awake).",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "secrets": "wrangler secret put CRON_SECRET"
+  }
 }

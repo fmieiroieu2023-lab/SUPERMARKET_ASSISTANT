@@ -9,6 +9,7 @@ import { Spending } from "./Spending";
 import { dayLabel, euro, friendly } from "./shared";
 import { ItemPage, UndoBar, takeFromLot, type UndoFn } from "./Item";
 import { ListTab } from "./List";
+import { SettingsPage } from "./Settings";
 import { catName, loadNames, Name, useNames } from "./names";
 
 type Lot = {
@@ -26,6 +27,7 @@ const needsAttention = (l: Lot) => l.state !== "ok" || (l.expiry_kind !== "none"
 function daysLabel(l: Lot): { n: string; u: string } {
   if (l.state === "expired") return { n: "!", u: "expired" };
   if (l.state === "check") return { n: "?", u: "check it" };
+  if (l.state === "unconfirmed") return { n: "?", u: "still have?" };
   if (l.expiry_kind === "none" || l.days_left === null) return { n: "", u: "" };
   if (l.days_left === 0) return { n: "today", u: "" };
   const n = `${l.expiry_kind === "estimate" ? "~" : ""}${l.days_left}`;
@@ -83,6 +85,7 @@ function Shell() {
   const [err, setErr] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [itemId, setItemId] = useState<string | null>(null);
+  const [settings, setSettings] = useState(false);
   const [receipt, setReceipt] = useState<{ files?: File[]; resumeId?: string } | null>(null);
   const [openTrip, setOpenTrip] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<{ purchase_id: string; created_at: string }[]>([]);
@@ -117,23 +120,29 @@ function Shell() {
 
   // A new screen starts at the top.
   const screen = useRef<HTMLElement>(null);
-  useEffect(() => { screen.current?.scrollTo(0, 0); }, [tab, itemId, openTrip]);
+  useEffect(() => { screen.current?.scrollTo(0, 0); }, [tab, itemId, openTrip, settings]);
 
   const attention = useMemo(() => (lots ?? []).filter(needsAttention), [lots]);
   const attentionCount = overview ? overview.expired + overview.expiring_3_days + overview.to_check : attention.length;
+  // Number on the app icon (home-screen app): what needs attention today.
+  useEffect(() => {
+    const n = navigator as Navigator & { setAppBadge?: (n: number) => Promise<void>; clearAppBadge?: () => Promise<void> };
+    if (lots === null) return;
+    void (attentionCount > 0 ? n.setAppBadge?.(attentionCount) : n.clearAppBadge?.())?.catch?.(() => undefined);
+  }, [attentionCount, lots]);
   const changed = (u: UndoFn | null) => { if (u) setUndo(u); void load(); };
   const swipe = (l: Lot, reason: "consume" | "discard") => {
     void takeFromLot(l.lot_id, Number(l.qty_left), reason, lotName(l).en).then(changed).catch((e) => setErr(friendly(String(e))));
   };
   const openTripFrom = (id: string) => { setItemId(null); setTab("spending"); setOpenTrip(id); };
 
-  const go = (t: Tab, flag = false) => { setTab(t); setOnlyFlag(flag); setItemId(null); };
+  const go = (t: Tab, flag = false) => { setTab(t); setOnlyFlag(flag); setItemId(null); setSettings(false); };
   return (
     <div className="app">
       <IconSprite />
       <main className="screen" ref={screen}>
         {err && <p className="err pad">{err} <button className="link" onClick={() => void load()}>Retry</button></p>}
-        {itemId ? <ItemPage lotId={itemId} onBack={() => setItemId(null)} onChanged={changed} onOpenTrip={openTripFrom} /> : <>
+        {settings ? <SettingsPage onBack={() => setSettings(false)} /> : itemId ? <ItemPage lotId={itemId} onBack={() => setItemId(null)} onChanged={changed} onOpenTrip={openTripFrom} /> : <>
           {tab === "home" && drafts[0] && (
             <div className="pad" style={{ paddingBottom: 0 }}>
               <button className="banner warn-b item-btn" onClick={() => setReceipt({ resumeId: drafts[0].purchase_id })}>
@@ -143,7 +152,7 @@ function Shell() {
           )}
           {tab === "home" && <Home lots={lots} attention={attention} count={attentionCount} lastTrip={lastTrip} month={month} onBudget={() => { go("spending"); setOpenTrip(null); }}
             onAttention={() => go("pantry", true)} onPantry={(pl = "all") => { setPlace(pl); go("pantry"); }} onItem={setItemId} onTrip={openTripFrom}
-            onAdd={() => setAddOpen(true)} />}
+            onAdd={() => setAddOpen(true)} onSettings={() => setSettings(true)} onChanged={changed} />}
           {tab === "pantry" && <Pantry lots={lots} onlyFlag={onlyFlag} setOnlyFlag={setOnlyFlag} total={overview?.in_stock ?? 0}
             place={place} setPlace={setPlace} onSelect={(l) => setItemId(l.lot_id)} onSwipe={swipe} />}
           {tab === "list" && <ListTab onChanged={changed} />}
@@ -196,13 +205,15 @@ function greeting() {
   return h < 6 ? "Good night" : h < 13 ? "Good morning" : h < 20 ? "Good afternoon" : "Good evening";
 }
 
-function Home({ lots, attention, count, lastTrip, month, onBudget, onAttention, onPantry, onItem, onTrip, onAdd }: {
+function Home({ lots, attention, count, lastTrip, month, onBudget, onAttention, onPantry, onItem, onTrip, onAdd, onSettings, onChanged }: {
   lots: Lot[] | null; attention: Lot[]; count: number; lastTrip: LastTrip | null;
   month: { spent_cents: number; budget_cents: number | null; alert: string | null } | null; onBudget: () => void;
   onAttention: () => void; onPantry: (place?: string) => void; onItem: (id: string) => void; onTrip: (id: string) => void; onAdd: () => void;
+  onSettings: () => void; onChanged: (u: UndoFn | null) => void;
 }) {
-  const inStock = (lots ?? []).filter((l) => l.state !== "finished");
-  const first = attention[0] ?? inStock.find((l) => l.expiry_kind !== "none");
+  const inStock = (lots ?? []).filter((l) => l.state !== "finished" && l.state !== "unconfirmed");
+  const stillAsk = (lots ?? []).filter((l) => l.state === "unconfirmed" || l.state === "check").slice(0, 3);
+  const first = attention.find((l) => l.state !== "unconfirmed") ?? inStock.find((l) => l.expiry_kind !== "none");
   const soon = inStock.filter((l) => l.expiry_kind !== "none").slice(0, 8);
   const byPlace = (id: string) => inStock.filter((l) => l.location === id).length;
   const families = useMemo(() => {
@@ -218,7 +229,9 @@ function Home({ lots, attention, count, lastTrip, month, onBudget, onAttention, 
           <p className="muted">{new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</p>
           <h1 className="serif">{greeting()}</h1>
         </div>
-        <div className="home-badge"><Tile id="cupboard" bg="#EEDCC4" size={52} /></div>
+        <button className="gear" aria-label="Settings and notifications" onClick={onSettings}>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        </button>
       </header>
 
       {lots && inStock.length === 0 && (
@@ -245,6 +258,27 @@ function Home({ lots, attention, count, lastTrip, month, onBudget, onAttention, 
             </div>
           </button>
           {count > 0 && <button className="pill-alert" onClick={onAttention}>{count} need{count === 1 ? "s" : ""} attention</button>}
+        </section>
+      )}
+
+      {stillAsk.length > 0 && (
+        <section className="stack-sm">
+          <h2 className="serif">Still have these?</h2>
+          {stillAsk.map((l) => { const ic = iconFor(l.category); const n = lotName(l); return (
+            <div key={l.lot_id} className="card still">
+              <div className="still-top">
+                <Tile id={ic.id} bg={ic.tile} size={48} />
+                <div className="grow"><Name n={n} /><div className="muted small">{l.state === "check" ? "Past its best-before date: check it first" : "Its date has passed"} · {qtyLabel(l)}</div></div>
+              </div>
+              <div className="still-btns">
+                <button className="chip on" onClick={() => void (async () => {
+                  const { data, error } = await supabase.rpc("mark_lot", { p_lot: l.lot_id, p_action: "still_have" });
+                  if (!error) onChanged({ text: `${n.en}: still have it`, run: async () => { await supabase.rpc("mark_lot", { p_lot: l.lot_id, p_action: "restore", p_prev: (data as { prev: unknown }).prev }); } });
+                })()}>Yes, still have it</button>
+                <button className="chip" onClick={() => void takeFromLot(l.lot_id, Number(l.qty_left), "consume", n.en).then(onChanged)}>Finished</button>
+                <button className="chip red" onClick={() => void takeFromLot(l.lot_id, Number(l.qty_left), "discard", n.en).then(onChanged)}>Threw away</button>
+              </div>
+            </div>); })}
         </section>
       )}
 

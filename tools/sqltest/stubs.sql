@@ -41,3 +41,6 @@ create function tap.isnt(a anyelement, b anyelement, d text default '') returns 
   select case when a is distinct from b then 'ok - ' else 'not ok - ' end || coalesce(d, '') $$;
 create function tap.pass(d text default '') returns text language sql as $$ select 'ok - ' || coalesce(d, '') $$;
 grant execute on all functions in schema tap to public;
+-- Supabase gives service_role full access to public tables by default.
+alter default privileges in schema public grant all on tables to service_role;
+alter default privileges in schema public grant all on sequences to service_role;

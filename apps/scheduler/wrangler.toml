@@ -1,0 +1,14 @@
+# Hourly scheduler (§6.4). Deploy from your Mac: pnpm --filter scheduler deploy
+# One-time secrets: pnpm --filter scheduler secrets   (paste the CRON_SECRET from Supabase)
+#                   npx wrangler secret put RESEND_API_KEY   (optional: the "backend isn't responding" email)
+name = "pantry-scheduler"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+[triggers]
+crons = ["5 * * * *"]   # every hour at minute 5 (UTC; the function works out each user's local time)
+
+[vars]
+DIGEST_URL = "https://fijlwdcbindkymqgyfck.supabase.co/functions/v1/daily-digest"
+WATCHDOG_HOUR = "9"      # Madrid hour when a failing backend triggers one warning email
+WATCHDOG_TO = ""         # your email address for that warning (set it here or as a secret)
