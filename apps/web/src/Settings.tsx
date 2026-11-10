@@ -64,9 +64,12 @@ export function SettingsPage({ onBack }: { onBack: () => void }) {
   }
   async function test() {
     setBusy(true); setErr(""); setMsg("");
-    const { error } = await supabase.functions.invoke("daily-digest", { body: {} });
+    const { data, error } = await supabase.functions.invoke("daily-digest", { body: {} });
     if (error) { const m = await invokeError(error); setErr(m.includes("NO_DEVICES") ? "Turn on notifications on this device first." : friendly(m)); }
-    else setMsg("Sent. It should arrive in a few seconds.");
+    else {
+      const em = (data as { email?: string })?.email;
+      setMsg(`Sent. It should arrive in a few seconds.${em === "ok" ? " Email sent too." : em === "no email key" ? " Email isn't set up on the server yet." : em && em !== "off" ? " The email didn't go out." : ""}`);
+    }
     setBusy(false);
   }
 

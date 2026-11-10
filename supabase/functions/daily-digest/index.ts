@@ -25,31 +25,80 @@ const CORS = {
 };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
-type Lot = { lot_id: string; name: string; name_es: string; date: string };
+type Lot = { lot_id: string; name: string; name_es: string; date: string; qty: number; unit: string; location: string; kind: string };
 type Digest = { day: string; count: number; empty: boolean; expired: Lot[]; check: Lot[]; today: Lot[]; soon: Lot[]; still_have: Lot[];
-  budget: { alert: string | null; pct: number | null; spent_cents: number; budget_cents: number | null; projected_cents: number | null; projection_alert: boolean } | null };
+  budget: { alert: string | null; pct: number | null; spent_cents: number; budget_cents: number | null; projected_cents: number | null; projection_alert: boolean } | null;
+  list: { count: number; estimate_cents: number; unknown: number } | null };
 type Sub = { endpoint: string; keys: { p256dh: string; auth: string } };
 
+// ── Wording (approved by Francisco, 2026-11-10). Order: today → soon → bin → check → still have → list → budget.
 const euro = (c: number | null | undefined) => c == null ? "" : `€${(c / 100).toFixed(2)}`;
-const names = (ls: Lot[], max = 3) => ls.slice(0, max).map((l) => l.name).join(", ") + (ls.length > max ? ` +${ls.length - max}` : "");
-const weekday = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short" });
+const join = (ls: string[]) => ls.join(", ");
+const weekday = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", timeZone: "UTC" });
+const longDay = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+const daysAgo = (from: string, to: string) => Math.round((Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`)) / 864e5);
+const PLACE: Record<string, string> = { fridge: "fridge", freezer: "freezer", pantry: "cupboard" };
+const qty = (l: Lot) => { const n = Number(l.qty); return l.unit === "unit" ? `${n} item${n === 1 ? "" : "s"}` : `${n} ${l.unit}`; };
+const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-// Turn the digest groups into words (formatting only).
-function words(d: Digest): { title: string; lines: string[] } {
-  const lines: string[] = [];
-  if (d.today.length) lines.push(`Use today: ${names(d.today)}`);
-  if (d.soon.length) lines.push(`Next days: ${d.soon.slice(0, 3).map((l) => `${l.name} (${weekday(l.date)})`).join(", ")}${d.soon.length > 3 ? ` +${d.soon.length - 3}` : ""}`);
-  if (d.expired.length) lines.push(`Past its date, bin it: ${names(d.expired)}`);
-  if (d.check.length) lines.push(`Check it first: ${names(d.check)}`);
-  if (d.still_have.length) lines.push(`Still have these? ${names(d.still_have)}`);
-  const b = d.budget;
-  if (b?.alert === "over") lines.push(`Budget: over (${euro(b.spent_cents)} of ${euro(b.budget_cents)})`);
-  else if (b?.alert === "near") lines.push(`Budget: ${b.pct}% used (${euro(b.spent_cents)} of ${euro(b.budget_cents)})`);
-  else if (b?.projection_alert) lines.push(`Budget: on course for about ${euro(b.projected_cents)} this month`);
-  const title = d.count === 0 ? (b ? "Your budget" : "Nothing urgent today")
-    : d.today.length ? `${d.today.length} to use today${d.count > d.today.length ? ` · ${d.count - d.today.length} more to look at` : ""}`
-    : `${d.count} thing${d.count === 1 ? "" : "s"} in your kitchen to look at`;
-  return { title, lines };
+function budgetLine(b: Digest["budget"]): string | null {
+  if (!b) return null;
+  if (b.alert === "over") return `💶 Budget: over (${euro(b.spent_cents)} of ${euro(b.budget_cents)})`;
+  if (b.alert === "near") return `💶 Budget: ${b.pct}% used (${euro(b.spent_cents)} of ${euro(b.budget_cents)})`;
+  if (b.projection_alert) return `💶 Budget: on course for about ${euro(b.projected_cents)} this month`;
+  return null;
+}
+const listLine = (l: Digest["list"]) => l ? `🛒 List: ${l.count} item${l.count === 1 ? "" : "s"}${l.estimate_cents ? ` · about ${euro(l.estimate_cents)}` : ""}` : null;
+
+function title(d: Digest): string {
+  if (d.count > 0) return `🧺 ${d.count} item${d.count === 1 ? " needs" : "s need"} you today`;
+  if (d.list) return `🛒 ${d.list.count} item${d.list.count === 1 ? "" : "s"} on your list`;
+  return budgetLine(d.budget) ?? "🧺 Nothing urgent today";
+}
+
+// Phone notification: one line per group, only groups with something in them.
+function pushText(d: Digest): { title: string; body: string } {
+  const lines = [
+    d.today.length ? `🔥 Use today: ${join(d.today.map((l) => l.name))}` : null,
+    d.soon.length ? `⏳ Soon: ${join(d.soon.map((l) => `${l.name} (${weekday(l.date)})`))}` : null,
+    d.expired.length ? `🗑️ Bin: ${join(d.expired.map((l) => l.name))}` : null,
+    d.check.length ? `👀 Check: ${join(d.check.map((l) => l.name))}` : null,
+    d.still_have.length ? `❓ Still have?: ${join(d.still_have.map((l) => l.name))}` : null,
+    d.count > 0 || d.budget ? listLine(d.list) : null,   // when the list is the only news, it is the title
+    budgetLine(d.budget) && (d.count > 0 || d.list) ? budgetLine(d.budget) : null,
+  ].filter(Boolean) as string[];
+  const quiet = d.list && d.count === 0 ? `${d.list.estimate_cents ? `About ${euro(d.list.estimate_cents)} · ` : ""}tap to see it` : "Open the app to see your kitchen.";
+  return { title: title(d), body: lines.join("\n") || quiet };
+}
+
+// Email: the same content as a page, with Spanish names, quantities and a button.
+function emailHtml(d: Digest): { subject: string; html: string; text: string } {
+  const es = (l: Lot) => l.name_es && l.name_es.toLowerCase() !== l.name.toLowerCase() ? ` <span style="color:#6B7166;font-style:italic">(${esc(l.name_es)})</span>` : "";
+  const section = (icon: string, head: string, items: string[]) => items.length
+    ? `<tr><td style="padding:14px 0 4px;font-size:17px;font-weight:700;color:#234032">${icon} ${head}</td></tr>` +
+      items.map((i) => `<tr><td style="padding:3px 0 3px 26px;font-size:16px;color:#1D211C">• ${i}</td></tr>`).join("")
+    : "";
+  const ago = (l: Lot) => { const n = daysAgo(l.date, d.day); return n === 1 ? "yesterday" : `${n} days ago`; };
+  const rows = [
+    section("🔥", "Use today", d.today.map((l) => `${esc(l.name)}${es(l)}, ${qty(l)} · ${PLACE[l.location] ?? l.location}`)),
+    section("⏳", "Soon", d.soon.map((l) => `${esc(l.name)}${es(l)}, ${weekday(l.date)}`)),
+    section("🗑️", "Bin", d.expired.map((l) => `${esc(l.name)}${es(l)} (${l.kind === "use_by" ? "use-by" : "date"} was ${ago(l)})`)),
+    section("👀", "Check", d.check.map((l) => `${esc(l.name)}${es(l)} (past its best-before, look and smell first)`)),
+    section("❓", "Still have these?", d.still_have.map((l) => `${esc(l.name)}${es(l)}`)),
+    d.list ? section("🛒", "Shopping list", [`${d.list.count} item${d.list.count === 1 ? "" : "s"}${d.list.estimate_cents ? `, about ${euro(d.list.estimate_cents)}` : ""}`]) : "",
+    budgetLine(d.budget) ? section("💶", "Budget", [esc(budgetLine(d.budget)!.replace(/^💶 Budget: /, ""))]) : "",
+  ].join("");
+  const subject = title(d);
+  const html = `<!doctype html><html><body style="margin:0;background:#F0EDE6">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F0EDE6;padding:24px 12px">
+<tr><td align="center"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border:1px solid #DAD5C9;border-radius:20px;padding:24px;font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif">
+<tr><td style="font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:700;color:#1D211C">${esc(subject)}</td></tr>
+<tr><td style="padding-top:4px;font-size:14px;color:#6B7166;font-style:italic">${longDay(d.day)}</td></tr>
+${rows}
+<tr><td style="padding-top:22px"><a href="${APP_URL}" style="display:inline-block;background:#234032;color:#F5F1E6;text-decoration:none;font-weight:700;font-size:16px;padding:14px 22px;border-radius:24px">Open your pantry</a></td></tr>
+</table></td></tr></table></body></html>`;
+  const p = pushText(d);
+  return { subject, html, text: [subject, longDay(d.day), "", p.body, "", APP_URL].join("\n") };
 }
 
 // Send one notification. Returns "ok", "gone" (the device unsubscribed: forget it) or an error text.
@@ -64,17 +113,14 @@ async function push(sub: Sub, payload: unknown): Promise<string> {
   } catch (e) { return e instanceof Error ? e.message : "push failed"; }
 }
 
-async function email(to: string, title: string, lines: string[]): Promise<string> {
+async function email(to: string, d: Digest): Promise<string> {
   if (!RESEND_KEY) return "no email key";
-  const html = `<div style="font-family:system-ui,sans-serif;font-size:16px;color:#1D211C">
-    <h2 style="font-family:Georgia,serif;color:#234032">${title}</h2>
-    ${lines.map((l) => `<p style="margin:8px 0">${l.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</p>`).join("")}
-    <p style="margin-top:20px"><a href="${APP_URL}" style="color:#234032;font-weight:700">Open your pantry</a></p></div>`;
+  const m = emailHtml(d);
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST", headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: RESEND_FROM, to, subject: title, html, text: [title, ...lines, APP_URL].join("\n") }),
+    body: JSON.stringify({ from: RESEND_FROM, to, subject: m.subject, html: m.html, text: m.text }),
   });
-  return res.ok ? "ok" : `email ${res.status}`;
+  return res.ok ? "ok" : `email ${res.status}: ${(await res.text()).slice(0, 160)}`;
 }
 
 Deno.serve(async (req) => {
@@ -96,15 +142,15 @@ Deno.serve(async (req) => {
       const dg = d.data as Digest;
       const r: Record<string, unknown> = { user: u.user_id, count: dg.count };
       if (!dg.empty) {
-        const { title, lines } = words(dg);
+        const p = pushText(dg);
         const results = [];
-        for (const s of u.push ?? []) {
-          const out = await push(s, { title, body: lines.join("\n"), count: dg.count, url: "/" });
-          if (out === "gone") await admin.rpc("cron_drop_subscription", { p_user: u.user_id, p_endpoint: s.endpoint });
+        for (const sb of u.push ?? []) {
+          const out = await push(sb, { title: p.title, body: p.body, count: dg.count, url: "/" });
+          if (out === "gone") await admin.rpc("cron_drop_subscription", { p_user: u.user_id, p_endpoint: sb.endpoint });
           results.push(out);
         }
         r.push = results;
-        if (u.email_digest && u.email) r.email = await email(u.email, title, lines);
+        if (u.email_digest && u.email) r.email = await email(u.email, dg);
       }
       await admin.rpc("cron_mark_sent", { p_user: u.user_id, p_day: u.day });   // once a day, even when empty
       report.push(r);
@@ -121,16 +167,19 @@ Deno.serve(async (req) => {
   });
   const { data: claims, error: authErr } = await db.auth.getClaims(token);
   if (authErr || !claims?.claims?.sub) return json({ error: "UNAUTHORIZED" }, 401);
-  const [d, s] = await Promise.all([db.rpc("my_digest"), db.from("user_settings").select("push_subscription").maybeSingle()]);
+  const [d, st] = await Promise.all([db.rpc("my_digest"), db.from("user_settings").select("push_subscription,email_digest").maybeSingle()]);
   if (d.error) return json({ error: d.error.message }, 400);
-  const subs = (Array.isArray(s.data?.push_subscription) ? s.data!.push_subscription : []) as Sub[];
-  if (!subs.length) return json({ error: "NO_DEVICES", message: "Turn on notifications on this device first." }, 400);
-  const { title, lines } = words(d.data as Digest);
+  const dg = d.data as Digest;
+  const subs = (Array.isArray(st.data?.push_subscription) ? st.data!.push_subscription : []) as Sub[];
+  const wantsEmail = !!st.data?.email_digest && !!claims.claims.email;
+  if (!subs.length && !wantsEmail) return json({ error: "NO_DEVICES", message: "Turn on notifications on this device first." }, 400);
+  const p = pushText(dg);
   const results = [];
-  for (const sub of subs) {
-    const out = await push(sub, { title: `Test · ${title}`, body: lines.join("\n") || "This is how your morning summary will arrive.", count: (d.data as Digest).count, url: "/" });
-    if (out === "gone") await db.rpc("remove_push_subscription", { p_endpoint: sub.endpoint });
+  for (const sb of subs) {
+    const out = await push(sb, { title: p.title, body: p.body, count: dg.count, url: "/" });
+    if (out === "gone") await db.rpc("remove_push_subscription", { p_endpoint: sb.endpoint });
     results.push(out);
   }
-  return json({ ok: true, devices: subs.length, results });
+  const mail = wantsEmail ? await email(String(claims.claims.email), dg) : "off";
+  return json({ ok: true, devices: subs.length, results, email: mail });
 });
